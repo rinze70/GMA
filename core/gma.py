@@ -72,9 +72,7 @@ class Attention(nn.Module):
 
         else:
             sim = einsum('b h x y d, b h u v d -> b h x y u v', q, k)
-            spa_content = einsum('b h c l, b h d l -> b h c d', qs, ks)
-            spa_pos = self.pos_emb(qs)
-            spa = spa_content + spa_pos
+            spa = einsum('b h c l, b h d l -> b h c d', qs, ks)
 
         sim = rearrange(sim, 'b h x y u v -> b h (x y) (u v)')
         attn = sim.softmax(dim=-1)
