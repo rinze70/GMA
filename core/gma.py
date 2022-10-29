@@ -47,17 +47,20 @@ class Attention(nn.Module):
         self.scale = dim_head ** -0.5
         inner_dim = heads * dim_head
 
-        self.to_qk = nn.Conv2d(dim, inner_dim * 2, 1, bias=False)
+        self.to_qk = nn.Conv2d(dim, inner_dim * 4, 1, bias=False)
 
         self.pos_emb = RelPosEmb(max_pos_size, dim_head)
 
     def forward(self, fmap):
         heads, b, c, h, w = self.heads, *fmap.shape
 
-        q, k = self.to_qk(fmap).chunk(2, dim=1)
+        q, k, qs, ks= self.to_qk(fmap).chunk(4, dim=1)
 
         q, k = map(lambda t: rearrange(t, 'b (h d) x y -> b h x y d', h=heads), (q, k))
         q = self.scale * q
+
+        qs, ks = map(lambda t: rearrange(t, 'b (h d) x y -> b h d (x y)', h=heads), (qs, ks))
+        qs = (h * w)** -0.5 * qs
 
         if self.args.position_only:
             sim = self.pos_emb(q)
@@ -69,11 +72,15 @@ class Attention(nn.Module):
 
         else:
             sim = einsum('b h x y d, b h u v d -> b h x y u v', q, k)
+            spa_content = einsum('b h c l, b h d l -> b h c d', qs, ks)
+            spa_pos = self.pos_emb(qs)
+            spa = spa_content + spa_pos
 
         sim = rearrange(sim, 'b h x y u v -> b h (x y) (u v)')
         attn = sim.softmax(dim=-1)
+        attn_s = spa.softmax(dim=-1)
 
-        return attn
+        return [attn, attn_s]
 
 
 class Aggregate(nn.Module):
@@ -93,6 +100,7 @@ class Aggregate(nn.Module):
         self.to_v = nn.Conv2d(dim, inner_dim, 1, bias=False)
 
         self.gamma = nn.Parameter(torch.zeros(1))
+        self.gamma_s = nn.Parameter(torch.zeros(1))
 
         if dim != inner_dim:
             self.project = nn.Conv2d(inner_dim, dim, 1, bias=False)
@@ -104,13 +112,17 @@ class Aggregate(nn.Module):
 
         v = self.to_v(fmap)
         v = rearrange(v, 'b (h d) x y -> b h (x y) d', h=heads)
-        out = einsum('b h i j, b h j d -> b h i d', attn, v)
+        out = einsum('b h i j, b h j d -> b h i d', attn[0], v)
         out = rearrange(out, 'b h (x y) d -> b (h d) x y', x=h, y=w)
+
+        out_s = einsum('b h c d, b h j d -> b h j c', attn[1], v)
+        out_s = rearrange(out_s, 'b h (x y) d -> b (h d) x y', x=h, y=w)
 
         if self.project is not None:
             out = self.project(out)
+            out_s = self.project(out_s)
 
-        out = fmap + self.gamma * out
+        out = fmap + self.gamma * out + self.gamma_s * out_s
 
         return out
 
