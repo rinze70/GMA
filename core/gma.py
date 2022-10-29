@@ -18,7 +18,7 @@ class RelPosEmb(nn.Module):
         self.register_buffer('rel_ind', rel_ind)
 
     def forward(self, q):
-        batch, heads, h, w, c = q.shape
+        batch, c, h, w = q.shape
         height_emb = self.rel_height(self.rel_ind[:h, :h].reshape(-1))
         width_emb = self.rel_width(self.rel_ind[:w, :w].reshape(-1))
 
