@@ -51,6 +51,8 @@ class Attention(nn.Module):
 
         self.pos_emb = RelPosEmb(max_pos_size, dim_head)
 
+        self.dwconv = nn.Conv2d(inner_dim, inner_dim, 3, 1, 1, bias=True, groups=inner_dim) # POE from CPVT
+
     def forward(self, fmap):
         heads, b, c, h, w = self.heads, *fmap.shape
 
@@ -68,6 +70,7 @@ class Attention(nn.Module):
             sim = sim_content + sim_pos
 
         else:
+            q = self.dwconv(q) # POE
             sim = einsum('b h x y d, b h u v d -> b h x y u v', q, k)
 
         sim = rearrange(sim, 'b h x y u v -> b h (x y) (u v)')
