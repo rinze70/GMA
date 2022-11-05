@@ -57,6 +57,7 @@ class Attention(nn.Module):
         heads, b, c, h, w = self.heads, *fmap.shape
 
         q, k = self.to_qk(fmap).chunk(2, dim=1)
+        q = self.dwconv(q) # POE
 
         q, k = map(lambda t: rearrange(t, 'b (h d) x y -> b h x y d', h=heads), (q, k))
         q = self.scale * q
@@ -70,7 +71,6 @@ class Attention(nn.Module):
             sim = sim_content + sim_pos
 
         else:
-            q = self.dwconv(q) # POE
             sim = einsum('b h x y d, b h u v d -> b h x y u v', q, k)
 
         sim = rearrange(sim, 'b h x y u v -> b h (x y) (u v)')
