@@ -44,6 +44,7 @@ class RAFTGMA(nn.Module):
         self.att = Attention(args=self.args, dim=cdim, heads=self.args.num_heads, max_pos_size=160, dim_head=cdim)
         cor_planes = args.corr_levels * (2*args.corr_radius + 1)**2
         self.eca = EcaModule(channels=cor_planes)
+        self.eca_gamma = nn.Parameter(torch.zeros(1))
 
     def freeze_bn(self):
         for m in self.modules():
@@ -110,7 +111,7 @@ class RAFTGMA(nn.Module):
         for itr in range(iters):
             coords1 = coords1.detach()
             corr = corr_fn(coords1)  # index correlation volume
-            corr = self.eca(corr) # Efficient Channel Attention: https://arxiv.org/abs/1910.03151
+            corr = corr + self.eca(corr) * self.eca_gamma # Efficient Channel Attention: https://arxiv.org/abs/1910.03151
 
             flow = coords1 - coords0
             with autocast(enabled=self.args.mixed_precision):
