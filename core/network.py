@@ -111,7 +111,7 @@ class RAFTGMA(nn.Module):
         for itr in range(iters):
             coords1 = coords1.detach()
             corr = corr_fn(coords1)  # index correlation volume
-            if self.args.eca:
+            if self.args.corr_eca:
                 corr = corr + self.eca(corr) * self.eca_gamma # Efficient Channel Attention: https://arxiv.org/abs/1910.03151
 
             flow = coords1 - coords0
