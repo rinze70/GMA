@@ -270,7 +270,7 @@ if __name__ == '__main__':
                         help='use position and content-wise attention')
     parser.add_argument('--num_heads', default=1, type=int,
                         help='number of heads in attention and aggregation')
-    parser.add_argument('--eca', default=False, action='store_true',
+    parser.add_argument('--corr_eca', default=False, action='store_true',
                         help='use eca on corr')
 
     args = parser.parse_args()

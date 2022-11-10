@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from timm.models.layers import EcaModule
 
 
 class ResidualBlock(nn.Module):
@@ -140,6 +141,7 @@ class BasicEncoder(nn.Module):
 
         # output convolution
         self.conv2 = nn.Conv2d(128, output_dim, kernel_size=1)
+        self.eca = EcaModule(channels=output_dim)
 
         self.dropout = None
         if dropout > 0:
@@ -179,6 +181,8 @@ class BasicEncoder(nn.Module):
         x = self.layer3(x)
 
         x = self.conv2(x)
+
+        x = self.eca(x)
 
         if self.training and self.dropout is not None:
             x = self.dropout(x)
