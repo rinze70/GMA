@@ -7,6 +7,7 @@ from extractor import BasicEncoder
 from corr import CorrBlock
 from utils.utils import bilinear_sampler, coords_grid, upflow8
 from gma import Attention, Aggregate
+from timm.models.layers import EcaModule
 
 try:
     autocast = torch.cuda.amp.autocast
@@ -41,6 +42,8 @@ class RAFTGMA(nn.Module):
         self.cnet = BasicEncoder(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = GMAUpdateBlock(self.args, hidden_dim=hdim)
         self.att = Attention(args=self.args, dim=cdim, heads=self.args.num_heads, max_pos_size=160, dim_head=cdim)
+        cor_planes = args.corr_levels * (2*args.corr_radius + 1)**2
+        self.eca = EcaModule(channels=cor_planes)
 
     def freeze_bn(self):
         for m in self.modules():
@@ -107,6 +110,7 @@ class RAFTGMA(nn.Module):
         for itr in range(iters):
             coords1 = coords1.detach()
             corr = corr_fn(coords1)  # index correlation volume
+            corr = self.eca(corr) # Efficient Channel Attention: https://arxiv.org/abs/1910.03151
 
             flow = coords1 - coords0
             with autocast(enabled=self.args.mixed_precision):
