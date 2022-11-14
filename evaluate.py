@@ -396,6 +396,8 @@ if __name__ == '__main__':
                         help='use position and content-wise attention')
     parser.add_argument('--mixed_precision', default=True, help='use mixed precision')
     parser.add_argument('--model_name')
+    parser.add_argument('--corr_eca', default=False, action='store_true',
+                        help='use eca on corr')
 
     # Ablations
     parser.add_argument('--replace', default=False, action='store_true',
