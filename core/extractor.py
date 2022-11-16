@@ -1,10 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from triplet_attention import TripletAttention
 
 
 class ResidualBlock(nn.Module):
-    def __init__(self, in_planes, planes, norm_fn='group', stride=1):
+    def __init__(self, in_planes, planes, norm_fn='group', stride=1, triplet_attention=False):
         super(ResidualBlock, self).__init__()
 
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, padding=1, stride=stride)
@@ -44,6 +45,11 @@ class ResidualBlock(nn.Module):
             self.downsample = nn.Sequential(
                 nn.Conv2d(in_planes, planes, kernel_size=1, stride=stride), self.norm3)
 
+        if triplet_attention:
+            self.triplet_attention = TripletAttention()
+        else:
+            self.triplet_attention = None
+
     def forward(self, x):
         y = x
         y = self.relu(self.norm1(self.conv1(y)))
@@ -51,6 +57,9 @@ class ResidualBlock(nn.Module):
 
         if self.downsample is not None:
             x = self.downsample(x)
+
+        if self.triplet_attention is not None:
+            x = self.triplet_attention(x)
 
         return self.relu(x + y)
 
@@ -155,8 +164,8 @@ class BasicEncoder(nn.Module):
                     nn.init.constant_(m.bias, 0)
 
     def _make_layer(self, dim, stride=1):
-        layer1 = ResidualBlock(self.in_planes, dim, self.norm_fn, stride=stride)
-        layer2 = ResidualBlock(dim, dim, self.norm_fn, stride=1)
+        layer1 = ResidualBlock(self.in_planes, dim, self.norm_fn, stride=stride, triplet_attention=True)
+        layer2 = ResidualBlock(dim, dim, self.norm_fn, stride=1, triplet_attention=True)
         layers = (layer1, layer2)
 
         self.in_planes = dim
