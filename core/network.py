@@ -104,9 +104,14 @@ class RAFTGMA(nn.Module):
             coords1 = coords1 + flow_init
 
         flow_predictions = []
+        slp = (2*self.args.corr_radius + 1)**2 # singe level planes
+        flp = self.args.corr_levels * slp      # full level planes
+
         for itr in range(iters):
             coords1 = coords1.detach()
-            corr = corr_fn(coords1)  # index correlation volume
+            idx = itr//3 * slp
+            # corr = corr_fn(coords1)  # index correlation volume
+            corr = corr_fn(coords1)[:, flp-idx-slp: flp-idx]  # index correlation volume
 
             flow = coords1 - coords0
             with autocast(enabled=self.args.mixed_precision):
