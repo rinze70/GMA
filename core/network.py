@@ -31,7 +31,7 @@ class RAFTGMA(nn.Module):
         self.hidden_dim = hdim = 128
         self.context_dim = cdim = 128
         args.corr_levels = 4
-        args.corr_radius = 4
+        args.corr_radius = 8
 
         if 'dropout' not in self.args:
             self.args.dropout = 0
@@ -109,9 +109,11 @@ class RAFTGMA(nn.Module):
 
         for itr in range(iters):
             coords1 = coords1.detach()
-            idx = itr//3 * slp
+            # idx = itr//3 * slp
+            idx = itr//3
             # corr = corr_fn(coords1)  # index correlation volume
-            corr = corr_fn(coords1)[:, flp-idx-slp: flp-idx]  # index correlation volume
+            # corr = corr_fn(coords1)[:, flp-idx-slp: flp-idx]  # index correlation volume
+            corr = corr_fn(coords1, self.args.corr_levels-idx-1)
 
             flow = coords1 - coords0
             with autocast(enabled=self.args.mixed_precision):
