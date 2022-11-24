@@ -27,15 +27,15 @@ def load_image(imfile):
     return img[None].to(DEVICE)
 
 
-def viz(img, flo, flow_dir):
+def viz(img, flo, flow_dir, i):
     img = img[0].permute(1, 2, 0).cpu().numpy()
     flo = flo[0].permute(1, 2, 0).cpu().numpy()
 
     # map flow to rgb image
     flo = flow_viz.flow_to_image(flo)
 
-    imageio.imwrite(os.path.join(flow_dir, 'flo.png'), flo)
-    print(f"Saving optical flow visualisation at {os.path.join(flow_dir, 'flo.png')}")
+    imageio.imwrite(os.path.join(flow_dir, f'flo{i}.png'), flo)
+    print(f"Saving optical flow visualisation at {os.path.join(flow_dir, f'flo{i}.png')}")
 
 
 def normalize(x):
@@ -60,8 +60,7 @@ def demo(args):
                  glob.glob(os.path.join(args.path, '*.jpg'))
 
         images = sorted(images)
-
-        for imfile1, imfile2 in zip(images[:-1], images[1:]):
+        for i, (imfile1, imfile2) in enumerate(zip(images[:-1], images[1:])):
             image1 = load_image(imfile1)
             image2 = load_image(imfile2)
             print(f"Reading in images at {imfile1} and {imfile2}")
@@ -72,7 +71,7 @@ def demo(args):
             flow_low, flow_up = model(image1, image2, iters=12, test_mode=True)
             print(f"Estimating optical flow...")
 
-            viz(image1, flow_up, flow_dir)
+            viz(image1, flow_up, flow_dir, i)
 
 
 if __name__ == '__main__':
