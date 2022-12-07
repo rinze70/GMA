@@ -3,3 +3,7 @@
 results
 datasets
 imgs
+*.pyc
+*.egg-info
+dist
+build
