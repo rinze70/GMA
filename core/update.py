@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from gma import Aggregate
+from gma import Aggregate, CAggregate
 
 
 class FlowHead(nn.Module):
@@ -123,10 +123,12 @@ class GMAUpdateBlock(nn.Module):
             nn.Conv2d(256, 64*9, 1, padding=0))
 
         self.aggregator = Aggregate(args=self.args, dim=128, dim_head=128, heads=self.args.num_heads)
+        self.aggregator_c = CAggregate(args=self.args, dim=128, dim_head=128, heads=self.args.num_heads)
 
-    def forward(self, net, inp, corr, flow, attention):
+    def forward(self, net, inp, corr, flow):
         motion_features = self.encoder(flow, corr)
-        motion_features_global = self.aggregator(attention, motion_features)
+        motion_features_global = self.aggregator(inp, motion_features)
+        motion_features_global = self.aggregator_c(inp, motion_features_global)
         inp_cat = torch.cat([inp, motion_features, motion_features_global], dim=1)
 
         # Attentional update
