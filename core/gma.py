@@ -99,8 +99,12 @@ class Aggregate(nn.Module):
         else:
             self.project = None
 
-    def forward(self, attn, fmap):
+        self.att = Attention(args=self.args, dim=dim, heads=self.args.num_heads, max_pos_size=160, dim_head=dim_head)
+
+    def forward(self, inp, fmap):
         heads, b, c, h, w = self.heads, *fmap.shape
+
+        attn = self.att(inp)
 
         v = self.to_v(fmap)
         v = rearrange(v, 'b (h d) x y -> b h (x y) d', h=heads)
@@ -114,6 +118,90 @@ class Aggregate(nn.Module):
 
         return out
 
+class CAttention(nn.Module):
+    def __init__(
+        self,
+        *,
+        args,
+        dim,
+        max_pos_size = 100,
+        heads = 4,
+        dim_head = 128,
+    ):
+        super().__init__()
+        self.args = args
+        self.heads = heads
+        self.scale = dim_head ** -0.5
+        inner_dim = heads * dim_head
+
+        self.to_qk = nn.Conv2d(dim, inner_dim * 2, 1, bias=False)
+
+        # self.pos_emb = RelPosEmb(max_pos_size, dim_head)
+
+    def forward(self, fmap):
+        heads, b, c, h, w = self.heads, *fmap.shape
+
+        q, k = self.to_qk(fmap).chunk(2, dim=1)
+
+        q, k = map(lambda t: rearrange(t, 'b (h d) x y -> b h (x y) d', h=heads), (q, k))
+        q = self.scale * q
+
+        # if self.args.position_only:
+        #     sim = self.pos_emb(q)
+
+        # elif self.args.position_and_content:
+        #     sim_content = einsum('b h x y d, b h u v d -> b h x y u v', q, k)
+        #     sim_pos = self.pos_emb(q)
+        #     sim = sim_content + sim_pos
+
+        # else:
+        sim = einsum('b h N d, b h N c -> b h d c', q, k)
+
+        # sim = rearrange(sim, 'b h x y u v -> b h (x y) (u v)')
+        attn = sim.softmax(dim=-1)
+
+        return attn
+
+class CAggregate(nn.Module):
+    def __init__(
+        self,
+        args,
+        dim,
+        heads = 4,
+        dim_head = 128,
+    ):
+        super().__init__()
+        self.args = args
+        self.heads = heads
+        self.scale = dim_head ** -0.5
+        inner_dim = heads * dim_head
+
+        self.to_v = nn.Conv2d(dim, inner_dim, 1, bias=False)
+
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+        if dim != inner_dim:
+            self.project = nn.Conv2d(inner_dim, dim, 1, bias=False)
+        else:
+            self.project = None
+        
+        self.att = CAttention(args=self.args, dim=dim, heads=self.args.num_heads, max_pos_size=160, dim_head=dim_head)
+
+    def forward(self, inp, fmap):
+        heads, b, c, h, w = self.heads, *fmap.shape
+
+        attn_c = self.att(inp)
+        v = self.to_v(fmap)
+        v = rearrange(v, 'b (h d) x y -> b h (x y) d', h=heads)
+        out = einsum('b h d c, b h N c -> b h d N', attn_c, v)
+        out = rearrange(out, 'b h d (x y) -> b (h d) x y', x=h, y=w)
+
+        if self.project is not None:
+            out = self.project(out)
+
+        out = fmap + self.gamma * out
+
+        return out
 
 if __name__ == "__main__":
     att = Attention(dim=128, heads=1)
