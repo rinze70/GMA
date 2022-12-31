@@ -2,7 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from gma import Aggregate
-
+from torch import nn, einsum
+from einops import rearrange
+from timm.models.layers import EcaModule
 
 class FlowHead(nn.Module):
     def __init__(self, input_dim=128, hidden_dim=256):
@@ -123,6 +125,8 @@ class GMAUpdateBlock(nn.Module):
             nn.Conv2d(256, 64*9, 1, padding=0))
 
         self.aggregator = Aggregate(args=self.args, dim=128, dim_head=128, heads=self.args.num_heads)
+        # self.attention = SAttention(args=self.args, dim=128, heads=self.args.num_heads, max_pos_size=160, dim_head=128)
+        self.attention = EcaModule(128, 1)
 
     def forward(self, net, inp, corr, flow, attention):
         motion_features = self.encoder(flow, corr)
@@ -131,6 +135,7 @@ class GMAUpdateBlock(nn.Module):
 
         # Attentional update
         net = self.gru(net, inp_cat)
+        net = self.attention(net)
 
         delta_flow = self.flow_head(net)
 
@@ -139,4 +144,50 @@ class GMAUpdateBlock(nn.Module):
         return net, mask, delta_flow
 
 
+class SAttention(nn.Module):
+    def __init__(
+        self,
+        *,
+        args,
+        dim,
+        max_pos_size = 100,
+        heads = 4,
+        dim_head = 128,
+    ):
+        super().__init__()
+        self.args = args
+        self.heads = heads
+        self.scale = dim_head ** -0.5
+        inner_dim = heads * dim_head
 
+        self.to_qkv = nn.Conv2d(dim, inner_dim * 3, 1, bias=False)
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+        if dim != inner_dim:
+            self.project = nn.Conv2d(inner_dim, dim, 1, bias=False)
+        else:
+            self.project = None
+
+    def forward(self, fmap):
+        heads, b, c, h, w = self.heads, *fmap.shape
+
+        q, k ,v = self.to_qkv(fmap).chunk(3, dim=1)
+
+        q, k = map(lambda t: rearrange(t, 'b (h d) x y -> b h x y d', h=heads), (q, k))
+        q = self.scale * q
+
+        sim = einsum('b h x y d, b h u v d -> b h x y u v', q, k)
+
+        sim = rearrange(sim, 'b h x y u v -> b h (x y) (u v)')
+        attn = sim.softmax(dim=-1)
+
+        v = rearrange(v, 'b (h d) x y -> b h (x y) d', h=heads)
+        out = einsum('b h i j, b h j d -> b h i d', attn, v)
+        out = rearrange(out, 'b h (x y) d -> b (h d) x y', x=h, y=w)
+
+        if self.project is not None:
+            out = self.project(out)
+
+        out = fmap + self.gamma * out
+
+        return out
