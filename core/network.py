@@ -7,6 +7,7 @@ from extractor import BasicEncoder
 from corr import CorrBlock
 from utils.utils import bilinear_sampler, coords_grid, upflow8
 from gma import Attention, Aggregate
+from ConvNext import convnext
 
 try:
     autocast = torch.cuda.amp.autocast
@@ -37,7 +38,8 @@ class RAFTGMA(nn.Module):
             self.args.dropout = 0
 
         # feature network, context network, and update block
-        self.fnet = BasicEncoder(output_dim=256, norm_fn='instance', dropout=args.dropout)
+        # self.fnet = BasicEncoder(output_dim=256, norm_fn='instance', dropout=args.dropout)
+        self.fnet = convnext(pretrained=False)
         self.cnet = BasicEncoder(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = GMAUpdateBlock(self.args, hidden_dim=hdim)
         self.att = Attention(args=self.args, dim=cdim, heads=self.args.num_heads, max_pos_size=160, dim_head=cdim)
