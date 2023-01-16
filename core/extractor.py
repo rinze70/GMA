@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from SPP import SPPCSPC
+from SPP import SPPC
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_planes, planes, norm_fn='group', stride=1):
@@ -140,7 +140,7 @@ class BasicEncoder(nn.Module):
 
         # output convolution
         self.conv2 = nn.Conv2d(128, output_dim, kernel_size=1)
-        self.SPPm = SPPCSPC(128, output_dim)
+        self.SPPm = SPPC(128, output_dim)
 
         self.dropout = None
         if dropout > 0:

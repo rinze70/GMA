@@ -17,9 +17,10 @@ class CorrBlock:
         self.num_levels = num_levels
         self.radius = radius
         self.corr_pyramid = []
+        self.weights = nn.Parameter(torch.ones(5))
 
         # all pairs correlation
-        corr = CorrBlock.corr(fmap1, fmap2)
+        corr = self.corr(fmap1, fmap2)
 
         batch, h1, w1, dim, h2, w2 = corr.shape
         corr = corr.reshape(batch * h1 * w1, dim, h2, w2)
@@ -52,16 +53,27 @@ class CorrBlock:
         out = torch.cat(out_pyramid, dim=-1)
         return out.permute(0, 3, 1, 2).contiguous().float()
 
-    @staticmethod
-    def corr(fmap1, fmap2):
+    # @staticmethod
+    def corr(self, fmap1, fmap2):
         batch, dim, ht, wd = fmap1.shape
         fmap1 = fmap1.view(batch, dim, ht * wd)
         fmap2 = fmap2.view(batch, dim, ht * wd)
 
-        corr = torch.matmul(fmap1.transpose(1, 2), fmap2)
-        corr = corr.view(batch, ht, wd, 1, ht, wd)
-        return corr / torch.sqrt(torch.tensor(dim).float())
+        dims = [32, 32, 32, 32, 128]
+        fmap1_ms = list(fmap1.split(dims, dim=1))
+        fmap2_ms = list(fmap2.split(dims, dim=1))
 
+        corrs = []
+
+        for dim, weight in zip(dims, self.weights):
+            corr = torch.matmul(fmap1_ms.pop(0).transpose(1, 2), fmap2_ms.pop(0))
+            corr = corr.view(batch, ht, wd, 1, ht, wd)
+            corr = corr / torch.sqrt(torch.tensor(dim).float())*weight
+            corrs.append(corr)
+
+        corr = torch.cat(corrs, dim=3)
+        corr = torch.sum(corr, dim=3, keepdim=True)/torch.sum(self.weights)
+        return corr
 
 class CorrBlockSingleScale(nn.Module):
     def __init__(self, fmap1, fmap2, num_levels=4, radius=4):

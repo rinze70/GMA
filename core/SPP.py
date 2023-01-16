@@ -41,6 +41,25 @@ class SPPCSPC(nn.Module):
         y2 = self.cv2(x)
         return self.cv7(torch.cat((y1, y2), dim=1))
 
+class SPPC(nn.Module):
+    # CSP https://github.com/WongKinYiu/CrossStagePartialNetworks
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5, k=(5, 9, 13)):
+        super(SPPC, self).__init__()
+        c_ = int(2 * c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.cv2 = Conv(c1, c_, 1, 1)
+        self.cv3 = Conv(c_, c_, 3, 1)
+        self.cv4 = Conv(c_, c_, 1, 1)
+        self.m = nn.ModuleList([nn.MaxPool2d(kernel_size=x, stride=1, padding=x // 2) for x in k])
+        self.cv8 = Conv(c_, 32, 1, 1) # 256=4*50+56
+        self.cv9 = Conv(c_, 128, 1, 1) # 256=4*50+56
+
+    def forward(self, x):
+        x1 = self.cv4(self.cv3(self.cv1(x)))
+        y1 = torch.cat([self.cv8(x1)] + [self.cv8(m(x1)) for m in self.m], 1) # 4*50
+        y2 = self.cv9(self.cv2(x)) # 56
+        return torch.cat((y1, y2), dim=1)
+
 if __name__ == "__main__":
     fmap = torch.randn(2, 3, 368, 496)
 
