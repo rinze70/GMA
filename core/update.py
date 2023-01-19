@@ -127,8 +127,8 @@ class GMAUpdateBlock(nn.Module):
 
     def forward(self, net, inp, corr, flow):
         motion_features = self.encoder(flow, corr)
-        motion_features_global = self.aggregator(inp, motion_features)
-        motion_features_global = self.aggregator_c(inp, motion_features_global)
+        motion_features_global = self.aggregator_c(inp, motion_features)
+        motion_features_global = self.aggregator(inp, motion_features_global)
         inp_cat = torch.cat([inp, motion_features, motion_features_global], dim=1)
 
         # Attentional update
