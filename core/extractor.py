@@ -140,6 +140,7 @@ class BasicEncoder(nn.Module):
 
         # output convolution
         self.conv2 = nn.Conv2d(128, output_dim, kernel_size=1)
+        # self.SPPm = SPPCSPC(128, output_dim)
 
         self.dropout = None
         if dropout > 0:
@@ -179,6 +180,7 @@ class BasicEncoder(nn.Module):
         x = self.layer3(x)
 
         x = self.conv2(x)
+        # x = self.SPPm(x)
 
         if self.training and self.dropout is not None:
             x = self.dropout(x)
