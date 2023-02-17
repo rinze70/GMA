@@ -39,8 +39,9 @@ class RAFTGMA(nn.Module):
 
         # feature network, context network, and update block
         # self.fnet = BasicEncoder(output_dim=256, norm_fn='instance', dropout=args.dropout)
-        self.fnet = convnext(output_dim=256)
+        self.fnet = convnext(output_dim=256, SPP=True)
         self.cnet = BasicEncoder(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
+        # self.cnet = convnext(output_dim=hdim + cdim)
         self.update_block = GMAUpdateBlock(self.args, hidden_dim=hdim)
         self.att = Attention(args=self.args, dim=cdim, heads=self.args.num_heads, max_pos_size=160, dim_head=cdim)
 
