@@ -4,13 +4,18 @@ import timm
 import numpy as np
 from SPP import SPPCSPC
 from timm.models.convnext import _create_convnext
-from timm.models.registry import register_model
+from timm.models._registry import register_model
+# timm == 0.7.0.dev0 -> 0.8.8.dev0
 
 class convnext(nn.Module):
-    def __init__(self, output_dim, pretrained=False):
+    def __init__(self, output_dim, pretrained=False, SPP=False):
         super().__init__()
-        self.cnt = timm.create_model('convnext_pico_ols_tiny', pretrained=pretrained)
-        self.SPPm = SPPCSPC(128, output_dim)
+        self.cnt = timm.create_model('convnextv2_pico_tiny', pretrained=pretrained)
+        if SPP:
+            self.SPPm = SPPCSPC(128, output_dim)
+        else:
+            self.SPPm = nn.Conv2d(128, output_dim, kernel_size=1)
+
 
         del self.cnt.head
         del self.cnt.stages[-1]
@@ -54,6 +59,22 @@ def convnext_pico_ols_tiny(pretrained=False, **kwargs):
     model_args = dict(
         depths=(2, 2, 6, 2), dims=(32, 64, 128, 256), conv_mlp=True,  stem_type='overlap_tiered', **kwargs)
     model = _create_convnext('convnext_pico_ols_tiny', pretrained=pretrained, **model_args)
+    return model
+
+@register_model
+def convnextv2_pico_tiny(pretrained=False, **kwargs):
+    # timm pico variant
+    model_args = dict(
+        depths=(2, 2, 6, 2), dims=(32, 64, 128, 256), use_grn=True, ls_init_value=None, conv_mlp=True, **kwargs)
+    model = _create_convnext('convnextv2_pico_tiny', pretrained=pretrained, **model_args)
+    return model
+
+@register_model
+def convnextv2_pico_ols_tiny(pretrained=False, **kwargs):
+    # timm pico variant
+    model_args = dict(
+        depths=(2, 2, 6, 2), dims=(32, 64, 128, 256), use_grn=True, ls_init_value=None, conv_mlp=True, stem_type='overlap_tiered', **kwargs)
+    model = _create_convnext('convnextv2_pico_ols_tiny', pretrained=pretrained, **model_args)
     return model
 
 if __name__ == '__main__':
