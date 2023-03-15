@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from update import GMAUpdateBlock
 from extractor import BasicEncoder
-from corr import CorrBlock
+from corr import CorrBlock, CrossAttention
 from utils.utils import bilinear_sampler, coords_grid, upflow8
 from gma import Attention, Aggregate
 from ConvNext import convnext
@@ -38,11 +38,12 @@ class RAFTGMA(nn.Module):
             self.args.dropout = 0
 
         # feature network, context network, and update block
-        # self.fnet = BasicEncoder(output_dim=256, norm_fn='instance', dropout=args.dropout)
-        self.fnet = convnext(output_dim=256, SPP=True)
+        self.fnet = BasicEncoder(output_dim=256, norm_fn='instance', dropout=args.dropout, SPP=False)
+        # self.fnet = convnext(output_dim=256, SPP=True)
         self.cnet = BasicEncoder(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
         # self.cnet = convnext(output_dim=hdim + cdim)
         self.update_block = GMAUpdateBlock(self.args, hidden_dim=hdim)
+        # self.cross_attn = CrossAttention(args=self.args, dim=256, heads=self.args.num_heads, dim_head=256)
         self.att = Attention(args=self.args, dim=cdim, heads=self.args.num_heads, max_pos_size=160, dim_head=cdim)
 
     def freeze_bn(self):
@@ -90,6 +91,9 @@ class RAFTGMA(nn.Module):
 
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
+        
+        # fmap1, fmap2 = self.cross_attn(fmap1, fmap2)
+
         corr_fn = CorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
 
         # run the context network
@@ -99,7 +103,7 @@ class RAFTGMA(nn.Module):
             net = torch.tanh(net)
             inp = torch.relu(inp)
             # attention, att_c, att_p = self.att(inp)
-            attention = self.att(inp)
+            # attention = self.att(inp)
 
         coords0, coords1 = self.initialize_flow(image1)
 
