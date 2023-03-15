@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import einsum
+from einops import rearrange
 import math
 from utils.utils import bilinear_sampler, coords_grid
 # from compute_sparse_correlation import compute_sparse_corr, compute_sparse_corr_torch, compute_sparse_corr_mink
@@ -101,3 +103,57 @@ class CorrBlockSingleScale(nn.Module):
         corr = torch.matmul(fmap1.transpose(1, 2), fmap2)
         corr = corr.view(batch, ht, wd, 1, ht, wd)
         return corr / torch.sqrt(torch.tensor(dim).float())
+
+class CrossAttention(nn.Module):
+    def __init__(
+        self,
+        *,
+        args,
+        dim,
+        max_pos_size = 100,
+        heads = 4,
+        dim_head = 128,
+    ):
+        super().__init__()
+        self.args = args
+        self.heads = heads
+        self.scale = dim_head ** -0.5
+        inner_dim = heads * dim_head
+
+        self.to_qv = nn.Conv2d(dim, inner_dim * 2, 1, bias=False)
+        self.to_kv = nn.Conv2d(dim, inner_dim * 2, 1, bias=False)
+
+        # self.pos_emb = RelPosEmb(max_pos_size, dim_head)
+
+    def forward(self, fmap1, fmap2):
+        heads, b, c, h, w = self.heads, *fmap1.shape
+
+        q, v1 = self.to_qv(fmap1).chunk(2, dim=1)
+        k, v2 = self.to_qv(fmap2).chunk(2, dim=1)
+
+        q, k, v1, v2 = map(lambda t: rearrange(t, 'b (h d) x y -> b h (x y) d', h=heads), (q, k, v1, v2))
+        q = self.scale * q
+
+        # if self.args.position_only:
+        #     sim = self.pos_emb(q)
+
+        # elif self.args.position_and_content:
+        #     sim_content = einsum('b h x y d, b h u v d -> b h x y u v', q, k)
+        #     sim_pos = self.pos_emb(q)
+        #     sim = sim_content + sim_pos
+
+        # else:
+        sim1 = einsum('b h N d, b h N c -> b h d c', q, k)
+        sim2 = einsum('b h N d, b h N c -> b h d c', k, q)
+
+        # sim = rearrange(sim, 'b h x y u v -> b h (x y) (u v)')
+        attn1 = sim1.softmax(dim=-1)
+        attn2 = sim2.softmax(dim=-1)
+        out1 = einsum('b h d c, b h N c -> b h d N', attn2, v1)
+        out2 = einsum('b h d c, b h N c -> b h d N', attn1, v2)
+        out1 = rearrange(out1, 'b h d (x y) -> b (h d) x y', x=h, y=w)
+        out2 = rearrange(out2, 'b h d (x y) -> b (h d) x y', x=h, y=w)
+        fmap1 = fmap1 + out1
+        fmap2 = fmap2 + out2
+
+        return fmap1, fmap2
