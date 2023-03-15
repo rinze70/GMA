@@ -70,7 +70,7 @@ def fetch_optimizer(args, model):
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wdecay, eps=args.epsilon)
 
     scheduler = optim.lr_scheduler.OneCycleLR(optimizer=optimizer, max_lr=args.lr, total_steps=args.num_steps+100,
-                                              pct_start=0.05, cycle_momentum=False, anneal_strategy='linear')
+                                              pct_start=0.05, cycle_momentum=False, anneal_strategy='linear', three_phase=False)
 
     return optimizer, scheduler
 
@@ -189,6 +189,7 @@ def train(model, train_loader, optimizer, scheduler, logger, scaler, args):
 
 def validate(model, args, logger):
     model.eval()
+    torch.cuda.empty_cache()
     results = {}
 
     # Evaluate results
