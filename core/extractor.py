@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from SPP import SPPCSPC
 
 
 class ResidualBlock(nn.Module):
@@ -114,7 +115,7 @@ class BottleneckBlock(nn.Module):
 
 
 class BasicEncoder(nn.Module):
-    def __init__(self, output_dim=128, norm_fn='batch', dropout=0.0):
+    def __init__(self, output_dim=128, norm_fn='batch', dropout=0.0, SPP=False):
         super(BasicEncoder, self).__init__()
         self.norm_fn = norm_fn
 
@@ -139,8 +140,11 @@ class BasicEncoder(nn.Module):
         self.layer3 = self._make_layer(128, stride=2)
 
         # output convolution
-        self.conv2 = nn.Conv2d(128, output_dim, kernel_size=1)
-        # self.SPPm = SPPCSPC(128, output_dim)
+        # self.conv2 = nn.Conv2d(128, output_dim, kernel_size=1)
+        if SPP:
+            self.conv2 = SPPCSPC(128, output_dim)
+        else:
+            self.conv2 = nn.Conv2d(128, output_dim, kernel_size=1)
 
         self.dropout = None
         if dropout > 0:
