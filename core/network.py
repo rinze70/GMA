@@ -69,7 +69,7 @@ class RAFTGMA(nn.Module):
         up_flow = up_flow.permute(0, 1, 4, 2, 5, 3)
         return up_flow.reshape(N, 2, 8 * H, 8 * W)
 
-    def forward(self, image1, image2, iters=12, flow_init=None, upsample=True, test_mode=False):
+    def forward(self, image1, image2, iters=12, flow_init=None, upsample=True, test_mode=False, net_prev=None):
         """ Estimate optical flow between pair of frames """
 
         image1 = 2 * (image1 / 255.0) - 1.0
@@ -103,6 +103,11 @@ class RAFTGMA(nn.Module):
         if flow_init is not None:
             coords1 = coords1 + flow_init
 
+        if net_prev is not None:
+            net, _ = torch.split(net, [hdim//2, hdim//2], dim=1)
+            net_prev, _ = torch.split(net_prev, [hdim//2, hdim//2], dim=1)
+            net = torch.concat([net, net_prev], dim=1)
+
         flow_predictions = []
         for itr in range(iters):
             coords1 = coords1.detach()
@@ -124,6 +129,6 @@ class RAFTGMA(nn.Module):
             flow_predictions.append(flow_up)
 
         if test_mode:
-            return coords1 - coords0, flow_up
+            return coords1 - coords0, flow_up, net
 
         return flow_predictions

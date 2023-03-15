@@ -292,7 +292,7 @@ def validate_sintel(model, iters=6):
         out_list = []
 
         for val_id in range(len(val_dataset)):
-            image1, image2, flow_gt, _ = val_dataset[val_id]
+            image1, image2, flow_gt, _, _ = val_dataset[val_id]
             image1 = image1[None].cuda()
             image2 = image2[None].cuda()
 
@@ -337,6 +337,72 @@ def validate_sintel(model, iters=6):
 
     return results
 
+@torch.no_grad()
+def validate_sintel_seq(model, warm_start=False, iters=6):
+    """ Peform validation using the Sintel (train) split """
+    model.eval()
+    results = {}
+    for dstype in ['clean', 'final']:
+        val_dataset = datasets.MpiSintel(split='training', dstype=dstype)
+        epe_list = []
+        gt_list = []
+        out_list = []
+
+        flow_prev, sequence_prev = None, None
+        net_prev = None
+        for val_id in range(len(val_dataset)):
+            image1, image2, flow_gt, _, (sequence, frame) = val_dataset[val_id]
+            image1 = image1[None].cuda()
+            image2 = image2[None].cuda()
+            if sequence != sequence_prev:
+                flow_prev = None
+
+            padder = InputPadder(image1.shape)
+            image1, image2 = padder.pad(image1, image2)
+
+            flow_low, flow_pr, net = model(image1, image2, iters=iters, flow_init=flow_prev, test_mode=True, net_prev=net_prev)
+            flow = padder.unpad(flow_pr[0]).cpu()
+
+            if warm_start:
+                flow_prev = forward_interpolate(flow_low[0])[None].cuda()
+
+            sequence_prev = sequence
+            net_prev = net
+
+            epe = torch.sum((flow - flow_gt)**2, dim=0).sqrt()
+            mag = torch.sum(flow_gt**2, dim=0).sqrt()
+
+            epe_list.append(epe.view(-1).numpy())
+            gt_res = torch.sum(flow_gt**2, dim=0).sqrt()
+            gt_list.append((gt_res).view(-1).numpy())
+
+            out = ((epe.view(-1)/mag.view(-1)) > 0.05).float()
+            out_list.append(out.cpu().numpy())
+
+        epe_all = np.concatenate(epe_list)
+        gt_all = np.concatenate(gt_list)
+        out_list = np.concatenate(out_list)
+
+        epe = np.mean(epe_all)
+        f1 = 100 * np.mean(out_list)
+        # px1 = np.mean(epe_all<1)
+        # px3 = np.mean(epe_all<3)
+        # px5 = np.mean(epe_all<5)
+        # px1 = np.mean(epe_all[gt_all<=1])
+        # px3 = np.mean(epe_all[(gt_all>1)&(gt_all<=10)])
+        # px5 = np.mean(epe_all[(gt_all>10)&(gt_all<=20)])
+        # px7 = np.mean(epe_all[(gt_all>20)&(gt_all<=30)])
+        # px9 = np.mean(epe_all[gt_all>30])
+        px1 = 100 * np.mean(out_list[gt_all<=1])
+        px3 = 100 * np.mean(out_list[(gt_all>1)&(gt_all<=10)])
+        px5 = 100 * np.mean(out_list[(gt_all>10)&(gt_all<=20)])
+        px7 = 100 * np.mean(out_list[(gt_all>20)&(gt_all<=30)])
+        px9 = 100 * np.mean(out_list[gt_all>30])
+
+        print("Validation (%s) EPE: %f, 1px: %f, 3px: %f, 5px: %f, 7px: %f, 9px: %f" % (dstype, epe, px1, px3, px5, px7, px9))
+        results[dstype] = np.mean(epe_list)
+
+    return results
 
 @torch.no_grad()
 def validate_sintel_occ(model, iters=6):
@@ -528,7 +594,8 @@ if __name__ == '__main__':
             validate_things(model.module, iters=args.iters)
 
         elif args.dataset == 'sintel':
-            validate_sintel(model.module, iters=args.iters)
+            # validate_sintel(model.module, iters=args.iters)
+            validate_sintel_seq(model.module, iters=args.iters, warm_start=True)
 
         elif args.dataset == 'sintel_occ':
             validate_sintel_occ(model.module, iters=args.iters)
