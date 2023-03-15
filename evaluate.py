@@ -95,6 +95,57 @@ def create_sintel_submission_vis(model, warm_start=False, output_path='sintel_su
             frame_utils.writeFlow(output_file, flow)
             sequence_prev = sequence
 
+@torch.no_grad()
+def validate_sintel_vis(model, warm_start=False, output_path='sintel_validation'):
+    """ Create vis for the Sintel validation """
+    model.eval()
+    for dstype in ['clean', 'final']:
+        test_dataset = datasets.MpiSintel(split='training', aug_params=None, dstype=dstype)
+
+        flow_prev, sequence_prev = None, None
+        for test_id in range(500):
+            image1, image2, flow_gt, _ = test_dataset[test_id]
+
+            padder = InputPadder(image1.shape)
+            image1, image2 = padder.pad(image1[None].to(f'cuda:{model.device_ids[0]}'), image2[None].to(f'cuda:{model.device_ids[0]}'))
+
+            flow_low, flow_pr = model.module(image1, image2, iters=32, flow_init=flow_prev, test_mode=True)
+            flow = padder.unpad(flow_pr[0]).cpu()
+            epe = torch.sum((flow - flow_gt)**2, dim=0).sqrt()
+            epe = np.mean(epe.view(-1).numpy())
+
+            # Visualizations
+            flow_img = flow_viz.flow_to_image(flow.permute(1, 2, 0).numpy())
+            flow_gt_img = flow_viz.flow_to_image(flow_gt.permute(1, 2, 0).numpy())
+            image = Image.fromarray(flow_img)
+            image_gt = Image.fromarray(flow_gt_img)
+            # if not os.path.exists(f'vis_sintel_training/RAFT/{dstype}/'):
+            #     os.makedirs(f'vis_sintel_training/RAFT/{dstype}/flow')
+
+            if not os.path.exists(f'vis_sintel_training/ours/{dstype}/'):
+                os.makedirs(f'vis_sintel_training/ours/{dstype}/flow')
+
+            if not os.path.exists(f'vis_sintel_training/gt/{dstype}/'):
+                os.makedirs(f'vis_sintel_training/gt/{dstype}/image')
+
+            if not os.path.exists(f'vis_sintel_training/flow_gt/{dstype}/'):
+                os.makedirs(f'vis_sintel_training/flow_gt/{dstype}/flow')
+
+            image.save(f'vis_sintel_training/ours/{dstype}/flow/{test_id}_{epe:.4f}.png')
+            image_gt.save(f'vis_sintel_training/flow_gt/{dstype}/flow/{test_id}.png')
+            # image.save(f'vis_test/RAFT/{dstype}/flow/{test_id}.png')
+            imageio.imwrite(f'vis_sintel_training/gt/{dstype}/image/{test_id}.png', image1[0].cpu().permute(1, 2, 0).numpy())
+            if warm_start:
+                flow_prev = forward_interpolate(flow_low[0])[None].cuda()
+
+            # output_dir = os.path.join(output_path, dstype, sequence)
+            # output_file = os.path.join(output_dir, 'frame%04d.flo' % (frame+1))
+
+            # if not os.path.exists(output_dir):
+            #     os.makedirs(output_dir)
+
+            # frame_utils.writeFlow(output_file, flow)
+            # sequence_prev = sequence
 
 @torch.no_grad()
 def create_kitti_submission(model, output_path='kitti_submission'):
@@ -178,6 +229,8 @@ def validate_things(model, iters=6):
 
     for dstype in ['frames_cleanpass', 'frames_finalpass']:
         epe_list = []
+        gt_list = []
+        out_list = []
         val_dataset = datasets.FlyingThings3D(dstype=dstype, split='validation')
         print(f'Dataset length {len(val_dataset)}')
         for val_id in range(len(val_dataset)):
@@ -192,16 +245,36 @@ def validate_things(model, iters=6):
             flow = padder.unpad(flow_pr[0]).cpu()
 
             epe = torch.sum((flow - flow_gt)**2, dim=0).sqrt()
+            mag = torch.sum(flow_gt**2, dim=0).sqrt()
+
             epe_list.append(epe.view(-1).numpy())
+            gt_res = torch.sum(flow_gt**2, dim=0).sqrt()
+            gt_list.append((gt_res).view(-1).numpy())
+
+            out = ((epe.view(-1)/mag.view(-1)) > 0.05).float()
+            out_list.append(out.cpu().numpy())
 
         epe_all = np.concatenate(epe_list)
+        gt_all = np.concatenate(gt_list)
+        out_list = np.concatenate(out_list)
 
         epe = np.mean(epe_all)
-        px1 = np.mean(epe_all < 1)
-        px3 = np.mean(epe_all < 3)
-        px5 = np.mean(epe_all < 5)
+        f1 = 100 * np.mean(out_list)
+        # px1 = np.mean(epe_all<1)
+        # px3 = np.mean(epe_all<3)
+        # px5 = np.mean(epe_all<5)
+        # px1 = np.mean(epe_all[gt_all<=1])
+        # px3 = np.mean(epe_all[(gt_all>1)&(gt_all<=10)])
+        # px5 = np.mean(epe_all[(gt_all>10)&(gt_all<=20)])
+        # px7 = np.mean(epe_all[(gt_all>20)&(gt_all<=30)])
+        # px9 = np.mean(epe_all[gt_all>30])
+        px1 = 100 * np.mean(out_list[gt_all<=1])
+        px3 = 100 * np.mean(out_list[(gt_all>1)&(gt_all<=10)])
+        px5 = 100 * np.mean(out_list[(gt_all>10)&(gt_all<=20)])
+        px7 = 100 * np.mean(out_list[(gt_all>20)&(gt_all<=30)])
+        px9 = 100 * np.mean(out_list[gt_all>30])
 
-        print("Validation (%s) EPE: %f, 1px: %f, 3px: %f, 5px: %f" % (dstype, epe, px1, px3, px5))
+        print("Validation (%s) EPE: %f, 1px: %f, 3px: %f, 5px: %f, 7px: %f, 9px: %f" % (dstype, epe, px1, px3, px5, px7, px9))
         results[dstype] = np.mean(epe_list)
 
     return results
@@ -215,6 +288,8 @@ def validate_sintel(model, iters=6):
     for dstype in ['clean', 'final']:
         val_dataset = datasets.MpiSintel(split='training', dstype=dstype)
         epe_list = []
+        gt_list = []
+        out_list = []
 
         for val_id in range(len(val_dataset)):
             image1, image2, flow_gt, _ = val_dataset[val_id]
@@ -228,16 +303,36 @@ def validate_sintel(model, iters=6):
             flow = padder.unpad(flow_pr[0]).cpu()
 
             epe = torch.sum((flow - flow_gt)**2, dim=0).sqrt()
+            mag = torch.sum(flow_gt**2, dim=0).sqrt()
+
             epe_list.append(epe.view(-1).numpy())
+            gt_res = torch.sum(flow_gt**2, dim=0).sqrt()
+            gt_list.append((gt_res).view(-1).numpy())
+
+            out = ((epe.view(-1)/mag.view(-1)) > 0.05).float()
+            out_list.append(out.cpu().numpy())
 
         epe_all = np.concatenate(epe_list)
+        gt_all = np.concatenate(gt_list)
+        out_list = np.concatenate(out_list)
 
         epe = np.mean(epe_all)
-        px1 = np.mean(epe_all<1)
-        px3 = np.mean(epe_all<3)
-        px5 = np.mean(epe_all<5)
+        f1 = 100 * np.mean(out_list)
+        # px1 = np.mean(epe_all<1)
+        # px3 = np.mean(epe_all<3)
+        # px5 = np.mean(epe_all<5)
+        # px1 = np.mean(epe_all[gt_all<=1])
+        # px3 = np.mean(epe_all[(gt_all>1)&(gt_all<=10)])
+        # px5 = np.mean(epe_all[(gt_all>10)&(gt_all<=20)])
+        # px7 = np.mean(epe_all[(gt_all>20)&(gt_all<=30)])
+        # px9 = np.mean(epe_all[gt_all>30])
+        px1 = 100 * np.mean(out_list[gt_all<=1])
+        px3 = 100 * np.mean(out_list[(gt_all>1)&(gt_all<=10)])
+        px5 = 100 * np.mean(out_list[(gt_all>10)&(gt_all<=20)])
+        px7 = 100 * np.mean(out_list[(gt_all>20)&(gt_all<=30)])
+        px9 = 100 * np.mean(out_list[gt_all>30])
 
-        print("Validation (%s) EPE: %f, 1px: %f, 3px: %f, 5px: %f" % (dstype, epe, px1, px3, px5))
+        print("Validation (%s) EPE: %f, 1px: %f, 3px: %f, 5px: %f, 7px: %f, 9px: %f" % (dstype, epe, px1, px3, px5, px7, px9))
         results[dstype] = np.mean(epe_list)
 
     return results
@@ -313,34 +408,34 @@ def separate_inout_sintel_occ():
         in_frame = occ_union ^ out_of_frame
 
         # Generate union of occlusions and out of frame
-        # path_list = occ_path.split('/')
-        # path_list[-3] = 'occ_plus_out'
-        # dir_path = os.path.join('/', *path_list[:-1])
-        # img_path = os.path.join('/', *path_list)
-        # if not os.path.exists(dir_path):
-        #     os.makedirs(dir_path)
-        #
-        # imageio.imwrite(img_path, occ_union.int().numpy() * 255)
+        path_list = occ_path.replace('/','\\').split('\\')
+        path_list[-3] = 'occ_plus_out'
+        dir_path = os.path.join('.\\', *path_list[:-1])
+        img_path = os.path.join('.\\', *path_list)
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+        
+        imageio.imwrite(img_path, occ_union.int().numpy() * 255)
 
         # Generate out-of-frame
-        # path_list = occ_path.split('/')
-        # path_list[-3] = 'out_of_frame'
-        # dir_path = os.path.join('/', *path_list[:-1])
-        # img_path = os.path.join('/', *path_list)
-        # if not os.path.exists(dir_path):
-        #     os.makedirs(dir_path)
-        #
-        # imageio.imwrite(img_path, out_of_frame.int().numpy() * 255)
+        path_list = occ_path.replace('/','\\').split('\\')
+        path_list[-3] = 'out_of_frame'
+        dir_path = os.path.join('.\\', *path_list[:-1])
+        img_path = os.path.join('.\\', *path_list)
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+        
+        imageio.imwrite(img_path, out_of_frame.int().numpy() * 255)
 
-        # # Generate in-frame occlusions
-        # path_list = occ_path.split('/')
-        # path_list[-3] = 'in_frame_occ'
-        # dir_path = os.path.join('/', *path_list[:-1])
-        # img_path = os.path.join('/', *path_list)
-        # if not os.path.exists(dir_path):
-        #     os.makedirs(dir_path)
-        #
-        # imageio.imwrite(img_path, in_frame.int().numpy() * 255)
+        # Generate in-frame occlusions
+        path_list = occ_path.replace('/','\\').split('\\')
+        path_list[-3] = 'in_frame_occ'
+        dir_path = os.path.join('.\\', *path_list[:-1])
+        img_path = os.path.join('.\\', *path_list)
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+        
+        imageio.imwrite(img_path, in_frame.int().numpy() * 255)
 
 
 
@@ -421,6 +516,9 @@ if __name__ == '__main__':
     # create_sintel_submission_vis(model, warm_start=True)
     # create_kitti_submission(model)
     # create_kitti_submission_vis(model)
+
+    # validate_sintel_vis(model)
+    # separate_inout_sintel_occ()
 
     with torch.no_grad():
         if args.dataset == 'chairs':
