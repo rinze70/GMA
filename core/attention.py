@@ -130,7 +130,7 @@ class ChannelAttention(Module):
         """
 
         # Compute the unnormalized attention and apply the masks
-        QK = torch.einsum("nlhd,nlhc->nhdc", queries, keys)
+        QK = torch.einsum("nlhd,nlhc->ndch", queries, keys)
 
         # Compute the attention and the weighted average
         softmax_temp = 1. / queries.size(3)**.5  # sqrt(D)
@@ -138,7 +138,7 @@ class ChannelAttention(Module):
         if self.use_dropout:
             A = self.dropout(A)
 
-        queried_values = torch.einsum("nhdc,nshd->nshc", A, values)
+        queried_values = torch.einsum("ndch,nshc->nshd", A, values)
 
         return queried_values.contiguous()
     
