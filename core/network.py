@@ -7,6 +7,7 @@ from extractor import BasicEncoder
 from corr import CorrBlock
 from utils.utils import bilinear_sampler, coords_grid, upflow8
 from gma import Attention, Aggregate
+from cgma import CAttention
 
 try:
     autocast = torch.cuda.amp.autocast
@@ -41,6 +42,7 @@ class RAFTGMA(nn.Module):
         self.cnet = BasicEncoder(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = GMAUpdateBlock(self.args, hidden_dim=hdim)
         self.att = Attention(args=self.args, dim=cdim, heads=self.args.num_heads, max_pos_size=160, dim_head=cdim)
+        self.att_c = CAttention(d_model=cdim, nhead=self.args.num_heads)
 
     def freeze_bn(self):
         for m in self.modules():
@@ -97,6 +99,7 @@ class RAFTGMA(nn.Module):
             inp = torch.relu(inp)
             # attention, att_c, att_p = self.att(inp)
             attention = self.att(inp)
+            attention_c = self.att_c(inp)
 
         coords0, coords1 = self.initialize_flow(image1)
 
@@ -110,7 +113,7 @@ class RAFTGMA(nn.Module):
 
             flow = coords1 - coords0
             with autocast(enabled=self.args.mixed_precision):
-                net, up_mask, delta_flow = self.update_block(net, inp, corr, flow, attention)
+                net, up_mask, delta_flow = self.update_block(net, inp, corr, flow, attention, attention_c)
 
             # F(t+1) = F(t) + \Delta(t)
             coords1 = coords1 + delta_flow
