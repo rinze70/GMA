@@ -24,5 +24,6 @@ if __name__ == '__main__':
     model = RAFTGMA(args)
     input = torch.randn(1, 3, 368, 496) # 1024*436
     macs, params = profile(model, inputs=(input, input, 12, None, True, True))
-    print(f"macs = {macs/1e9}G")
+    # print(f"macs = {macs/1e9}G")
+    print(f"flops = {2*macs/1e9}G")
     print(f"params = {params/1e6}M")
