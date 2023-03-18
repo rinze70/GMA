@@ -63,14 +63,17 @@ class ChannelAttention(nn.Module):
         self.num_heads = num_heads
         head_dim = dim // num_heads
         self.scale = head_dim ** -0.5
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.q = nn.Linear(dim, dim, bias=qkv_bias)
+        self.kv = nn.Linear(dim, dim * 2, bias=qkv_bias)
         self.proj = nn.Linear(dim, dim)
 
-    def forward(self, x):
+    def forward(self, x, source):
         B, N, C = x.shape
 
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4) # 3, B, h, N, C 
-        q, k, v = qkv[0], qkv[1], qkv[2]
+        q = self.q(x).reshape(B, N, 1, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4) # 1, B, h, N, C 
+        kv = self.kv(source).reshape(B, N, 2, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4) # 2, B, h, N, C 
+        q = q[0]
+        k, v = kv[0], kv[1]
 
         k = k * self.scale
         attention = k.transpose(-1, -2) @ v
@@ -112,10 +115,12 @@ class ChannelBlock(nn.Module):
                 hidden_features=mlp_hidden_dim,
                 act_layer=act_layer)
 
-    def forward(self, x, size):
+    def forward(self, x, source, size):
         x = self.cpe[0](x, size)
-        cur = self.norm1(x)
-        cur = self.attn(cur)
+        source = self.cpe[0](source, size)
+        x = self.norm1(x)
+        source = self.norm1(source)
+        cur = self.attn(x, source)
         x = x + self.drop_path(cur)
 
         x = self.cpe[1](x, size)
@@ -126,9 +131,16 @@ class ChannelBlock(nn.Module):
 if __name__ == '__main__':
     from einops import rearrange
     h, w = 368//8, 496//8
-    x = torch.randn(2, 256, h, w)
-    x = rearrange(x, 'n c h w -> n (h w) c')
+    fmap1 = torch.randn(2, 256, h, w)
+    fmap2 = torch.randn(2, 256, h, w)
+    fmap1 = rearrange(fmap1, 'n c h w -> n (h w) c')
+    fmap2 = rearrange(fmap2, 'n c h w -> n (h w) c')
+
     cb = ChannelBlock(dim=256, num_heads=8)
-    x, size = cb(x, (h, w))
-    x = rearrange(x, 'n (h w) c -> n c h w', h=h, w=w)
-    print(x.shape)
+
+    fmap1, size = cb(fmap1, fmap2, (h, w))
+    fmap2, size = cb(fmap2, fmap1, (h, w))
+    fmap1 = rearrange(fmap1, 'n (h w) c -> n c h w', h=h, w=w)
+    fmap2 = rearrange(fmap2, 'n (h w) c -> n c h w', h=h, w=w)
+
+    print(fmap1.shape, fmap2.shape)
