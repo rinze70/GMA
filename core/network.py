@@ -8,6 +8,7 @@ from corr import CorrBlock
 from utils.utils import bilinear_sampler, coords_grid, upflow8
 from gma import Attention, Aggregate
 from cgma import CAttention
+from davit import ChannelBlock
 
 try:
     autocast = torch.cuda.amp.autocast
@@ -42,6 +43,7 @@ class RAFTGMA(nn.Module):
         self.cnet = BasicEncoder(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = GMAUpdateBlock(self.args, hidden_dim=hdim)
         self.att = Attention(args=self.args, dim=cdim, heads=self.args.num_heads, max_pos_size=160, dim_head=cdim)
+        self.cb = ChannelBlock(dim=256, num_heads=8)
         self.att_c = CAttention(dim=cdim, num_heads=self.args.num_heads)
 
     def freeze_bn(self):
@@ -89,6 +91,15 @@ class RAFTGMA(nn.Module):
 
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
+
+        b, c, h, w = fmap1.shape
+        fmap1 = rearrange(fmap1, 'n c h w -> n (h w) c')
+        fmap2 = rearrange(fmap2, 'n c h w -> n (h w) c')
+        fmap1, size = self.cb(fmap1, fmap2, (h, w))
+        fmap2, size = self.cb(fmap2, fmap1, (h, w))
+        fmap1 = rearrange(fmap1, 'n (h w) c -> n c h w', h=h, w=w)
+        fmap2 = rearrange(fmap2, 'n (h w) c -> n c h w', h=h, w=w)
+
         corr_fn = CorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
 
         # run the context network
