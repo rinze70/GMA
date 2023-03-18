@@ -8,7 +8,8 @@ from extractor import BasicEncoder
 from corr import CorrBlock
 from utils.utils import bilinear_sampler, coords_grid, upflow8
 from gma import Attention, Aggregate
-from attention import AttentionLayer,PositionEncodingSine
+# from attention import AttentionLayer,PositionEncodingSine
+from davit import ChannelBlock
 
 try:
     autocast = torch.cuda.amp.autocast
@@ -43,8 +44,9 @@ class RAFTGMA(nn.Module):
         self.cnet = BasicEncoder(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = GMAUpdateBlock(self.args, hidden_dim=hdim)
         self.att = Attention(args=self.args, dim=cdim, heads=self.args.num_heads, max_pos_size=160, dim_head=cdim)
-        self.pos_encoding = PositionEncodingSine(d_model=256)
-        self.cross_channel = AttentionLayer(d_model=256, nhead=8, layer_name='cross', attention = 'channel')
+        # self.pos_encoding = PositionEncodingSine(d_model=256)
+        # self.cross_channel = AttentionLayer(d_model=256, nhead=8, layer_name='cross', attention = 'channel')
+        self.cb = ChannelBlock(dim=256, num_heads=8)
 
     def freeze_bn(self):
         for m in self.modules():
@@ -93,9 +95,16 @@ class RAFTGMA(nn.Module):
         fmap2 = fmap2.float()
 
         b, c, h, w = fmap1.shape
-        fmap1 = rearrange(self.pos_encoding(fmap1), 'n c h w -> n (h w) c')
-        fmap2 = rearrange(self.pos_encoding(fmap2), 'n c h w -> n (h w) c')
-        fmap1, fmap2 = self.cross_channel(fmap1, fmap2)
+        # fmap1 = rearrange(self.pos_encoding(fmap1), 'n c h w -> n (h w) c')
+        # fmap2 = rearrange(self.pos_encoding(fmap2), 'n c h w -> n (h w) c')
+        # fmap1, fmap2 = self.cross_channel(fmap1, fmap2)
+        # fmap1 = rearrange(fmap1, 'n (h w) c -> n c h w', h=h, w=w)
+        # fmap2 = rearrange(fmap2, 'n (h w) c -> n c h w', h=h, w=w)
+        fmap1 = rearrange(fmap1, 'n c h w -> n (h w) c')
+        fmap2 = rearrange(fmap2, 'n c h w -> n (h w) c')
+
+        fmap1, size = self.cb(fmap1, fmap2, (h, w))
+        fmap2, size = self.cb(fmap2, fmap1, (h, w))
         fmap1 = rearrange(fmap1, 'n (h w) c -> n c h w', h=h, w=w)
         fmap2 = rearrange(fmap2, 'n (h w) c -> n c h w', h=h, w=w)
 
