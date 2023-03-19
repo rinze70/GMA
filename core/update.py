@@ -65,7 +65,7 @@ class SepConvGRU(nn.Module):
 
 class DeformConvGRU(nn.Module):
     def __init__(self, hidden_dim=128, input_dim=128+128):
-        super(ConvGRU, self).__init__()
+        super(DeformConvGRU, self).__init__()
         self.convz = DeformConv2d(hidden_dim+input_dim, hidden_dim, 3, padding=1)
         self.convr = DeformConv2d(hidden_dim+input_dim, hidden_dim, 3, padding=1)
         self.convq = DeformConv2d(hidden_dim+input_dim, hidden_dim, 3, padding=1)
