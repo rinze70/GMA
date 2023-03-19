@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from gma import Aggregate
+from utils.utils import DeformConv2d
 
 
 class FlowHead(nn.Module):
@@ -62,6 +63,22 @@ class SepConvGRU(nn.Module):
 
         return h
 
+class DeformConvGRU(nn.Module):
+    def __init__(self, hidden_dim=128, input_dim=128+128):
+        super(ConvGRU, self).__init__()
+        self.convz = DeformConv2d(hidden_dim+input_dim, hidden_dim, 3, padding=1)
+        self.convr = DeformConv2d(hidden_dim+input_dim, hidden_dim, 3, padding=1)
+        self.convq = DeformConv2d(hidden_dim+input_dim, hidden_dim, 3, padding=1)
+
+    def forward(self, h, x):
+        hx = torch.cat([h, x], dim=1)
+
+        z = torch.sigmoid(self.convz(hx))
+        r = torch.sigmoid(self.convr(hx))
+        q = torch.tanh(self.convq(torch.cat([r*h, x], dim=1)))
+
+        h = (1-z) * h + z * q
+        return h
 
 class BasicMotionEncoder(nn.Module):
     def __init__(self, args):
@@ -114,7 +131,7 @@ class GMAUpdateBlock(nn.Module):
         super().__init__()
         self.args = args
         self.encoder = BasicMotionEncoder(args)
-        self.gru = SepConvGRU(hidden_dim=hidden_dim, input_dim=128+hidden_dim+hidden_dim)
+        self.gru = DeformConvGRU(hidden_dim=hidden_dim, input_dim=128+hidden_dim+hidden_dim)
         self.flow_head = FlowHead(hidden_dim, hidden_dim=256)
 
         self.mask = nn.Sequential(
