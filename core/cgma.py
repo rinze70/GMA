@@ -3,6 +3,7 @@ from torch import nn
 
 from davit import ConvPosEnc, Mlp
 from timm.models.layers import DropPath
+from einops import rearrange
 
 class CAttention(nn.Module):
     def __init__(self, dim, num_heads=8, qkv_bias=False, norm_layer=nn.LayerNorm,):
@@ -16,7 +17,9 @@ class CAttention(nn.Module):
 
         self.cpe = ConvPosEnc(dim=dim, k=3)
 
-    def forward(self, x, size):
+    def forward(self, x):
+        size = x.shape[-2:]
+        x = rearrange(x, 'n c h w -> n (h w) c')
         B, N, C = x.shape
 
         x = self.cpe(x, size)
@@ -67,7 +70,9 @@ class CAggregate(nn.Module):
                 hidden_features=mlp_hidden_dim,
                 act_layer=act_layer)
 
-    def forward(self, attention, x, size):
+    def forward(self, attention, x):
+        size = x.shape[-2:]
+        x = rearrange(x, 'n c h w -> n (h w) c')
         B, N, C = x.shape
 
         v = self.v(x).reshape(B, N, 1, self.heads, C // self.heads).permute(2, 0, 3, 1, 4) # 3, B, h, N, C 
@@ -83,18 +88,18 @@ class CAggregate(nn.Module):
 
         if self.ffn:
             x = x + self.drop_path(self.mlp(self.norm2(x)))
+        x = rearrange(x, 'n (h w) c -> n c h w', h=size[0], w=size[1])
         return x
 
     
 if __name__ == '__main__':
-    from einops import rearrange
     attn = CAttention(dim=128, num_heads=4)
     agg = CAggregate(dim=128, heads=4)
     h, w = 368//8, 496//8
 
     inp = torch.randn(1, 128, h, w)
-    inp = rearrange(inp, 'n c h w -> n (h w) c')
-    attention = attn(inp, size=(h, w))
-    out = agg(attention, inp, size=(h, w))
-    out = rearrange(out, 'n (h w) c -> n c h w', h=h, w=w)
+    # inp = rearrange(inp, 'n c h w -> n (h w) c')
+    attention = attn(inp)
+    out = agg(attention, inp)
+    # out = rearrange(out, 'n (h w) c -> n c h w', h=h, w=w)
     print(out.shape)
