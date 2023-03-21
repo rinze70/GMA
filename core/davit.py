@@ -76,9 +76,9 @@ class ChannelAttention(nn.Module):
         k, v = kv[0], kv[1]
 
         k = k * self.scale
-        attention = k.transpose(-1, -2) @ v
+        attention = q.transpose(-1, -2) @ k
         attention = attention.softmax(dim=-1)
-        x = (attention @ q.transpose(-1, -2)).transpose(-1, -2)
+        x = (attention @ v.transpose(-1, -2)).transpose(-1, -2)
         x = x.transpose(1, 2).reshape(B, N, C)
         x = self.proj(x)
         return x

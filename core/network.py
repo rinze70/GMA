@@ -95,8 +95,9 @@ class RAFTGMA(nn.Module):
         b, c, h, w = fmap1.shape
         fmap1 = rearrange(fmap1, 'n c h w -> n (h w) c')
         fmap2 = rearrange(fmap2, 'n c h w -> n (h w) c')
-        fmap1, size = self.cb(fmap1, fmap2, (h, w))
-        fmap2, size = self.cb(fmap2, fmap1, (h, w))
+
+        fmap1, _ = self.cb(fmap2, fmap1, (h, w))
+        fmap2, _ = self.cb(fmap1, fmap2, (h, w))
         fmap1 = rearrange(fmap1, 'n (h w) c -> n c h w', h=h, w=w)
         fmap2 = rearrange(fmap2, 'n (h w) c -> n c h w', h=h, w=w)
 
