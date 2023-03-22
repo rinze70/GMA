@@ -51,7 +51,8 @@ class CAggregate(nn.Module):
         super().__init__()
         self.heads = heads
 
-        self.cpe = ConvPosEnc(dim=dim, k=3)
+        self.cpe = nn.ModuleList([ConvPosEnc(dim=dim, k=3),
+                                  ConvPosEnc(dim=dim, k=3)])
         self.ffn = ffn
         self.norm1 = norm_layer(dim)
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
@@ -75,16 +76,18 @@ class CAggregate(nn.Module):
         x = rearrange(x, 'n c h w -> n (h w) c')
         B, N, C = x.shape
 
-        v = self.v(x).reshape(B, N, 1, self.heads, C // self.heads).permute(2, 0, 3, 1, 4) # 3, B, h, N, C 
+        x = self.cpe[0](x, size)
+        cur = self.norm1(x)
+        v = self.v(cur).reshape(B, N, 1, self.heads, C // self.heads).permute(2, 0, 3, 1, 4) # 3, B, h, N, C 
         v = v[0]
 
-        x = (attention @ v.transpose(-1, -2)).transpose(-1, -2)
-        x = x.transpose(1, 2).reshape(B, N, C)
-        cur = self.proj(x)
+        cur = (attention @ v.transpose(-1, -2)).transpose(-1, -2)
+        cur = cur.transpose(1, 2).reshape(B, N, C)
+        cur = self.proj(cur)
 
         x = x + self.drop_path(cur) * self.gamma
 
-        x = self.cpe(x, size)
+        x = self.cpe[1](x, size)
 
         if self.ffn:
             x = x + self.drop_path(self.mlp(self.norm2(x)))
