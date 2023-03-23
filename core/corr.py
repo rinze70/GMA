@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from utils.utils import bilinear_sampler, coords_grid
+from dat import DACorr
 # from compute_sparse_correlation import compute_sparse_corr, compute_sparse_corr_torch, compute_sparse_corr_mink
 
 try:
@@ -17,9 +18,15 @@ class CorrBlock:
         self.num_levels = num_levels
         self.radius = radius
         self.corr_pyramid = []
+        fmap_size = fmap1.shape[-2:]
+        dim = fmap1.shape[1]
+        heads = 1
+        hc = dim // heads
+        self.DACorr = DACorr(fmap_size, fmap_size, heads, hc)
 
         # all pairs correlation
-        corr = CorrBlock.corr(fmap1, fmap2)
+        # corr = CorrBlock.corr(fmap1, fmap2)
+        corr = self.DACorr(fmap1, fmap2)
 
         batch, h1, w1, dim, h2, w2 = corr.shape
         corr = corr.reshape(batch * h1 * w1, dim, h2, w2)
