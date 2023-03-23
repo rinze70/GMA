@@ -121,7 +121,7 @@ class ChannelBlock(nn.Module):
         x = self.norm1(x)
         source = self.norm1(source)
         cur = self.attn(x, source)
-        x = x + self.drop_path(cur)
+        x = source + self.drop_path(cur)
 
         x = self.cpe[1](x, size)
         if self.ffn:
