@@ -22,7 +22,7 @@ class CorrBlock:
         dim = fmap1.shape[1]
         heads = 1
         hc = dim // heads
-        self.DACorr = DACorr(fmap_size, fmap_size, heads, hc)
+        self.DACorr = DACorr(fmap_size, fmap_size, heads, hc).to(fmap1.device)
 
         # all pairs correlation
         # corr = CorrBlock.corr(fmap1, fmap2)
