@@ -103,10 +103,10 @@ class RAFTGMA(nn.Module):
         fmap1 = rearrange(fmap1, 'n c h w -> n (h w) c')
         fmap2 = rearrange(fmap2, 'n c h w -> n (h w) c')
 
-        fmap1, _ = self.cb(fmap2, fmap1, (h, w))
-        fmap2, _ = self.cb(fmap1, fmap2, (h, w))
-        fmap1 = rearrange(fmap1, 'n (h w) c -> n c h w', h=h, w=w)
-        fmap2 = rearrange(fmap2, 'n (h w) c -> n c h w', h=h, w=w)
+        fmap1_0, _ = self.cb(fmap2, fmap1, (h, w))
+        fmap2_0, _ = self.cb(fmap1, fmap2, (h, w))
+        fmap1 = rearrange(fmap1_0, 'n (h w) c -> n c h w', h=h, w=w)
+        fmap2 = rearrange(fmap2_0, 'n (h w) c -> n c h w', h=h, w=w)
 
         corr_fn = CorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
 
