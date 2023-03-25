@@ -131,4 +131,4 @@ class RAFTGMA(nn.Module):
         if test_mode:
             return coords1 - coords0, flow_up, net
 
-        return flow_predictions
+        return flow_predictions, net

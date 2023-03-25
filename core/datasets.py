@@ -299,7 +299,7 @@ def fetch_dataloader(args, TRAIN_DS='C+T+K+S+H'):
         train_dataset = KITTI(aug_params, split='training')
 
     train_loader = data.DataLoader(train_dataset, batch_size=args.batch_size, 
-        pin_memory=True, shuffle=True, num_workers=4, drop_last=True)
+        pin_memory=True, shuffle=False, num_workers=4, drop_last=True)
 
     # train_loader = data.DataLoader(train_dataset, batch_size=args.batch_size//2, 
     #     pin_memory=True, shuffle=False, sampler=DistributedSampler(train_dataset), num_workers=4, drop_last=True)
