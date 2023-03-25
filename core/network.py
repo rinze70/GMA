@@ -41,6 +41,9 @@ class RAFTGMA(nn.Module):
         self.cnet = BasicEncoder(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = GMAUpdateBlock(self.args, hidden_dim=hdim)
         self.att = Attention(args=self.args, dim=cdim, heads=self.args.num_heads, max_pos_size=160, dim_head=cdim)
+        self.conv1 = nn.Conv2d(hdim, hdim, kernel_size=3, stride=1, padding=1)
+        self.norm1 = nn.BatchNorm2d(hdim)
+        self.relu = nn.ReLU(inplace=True)
 
     def freeze_bn(self):
         for m in self.modules():
@@ -104,9 +107,11 @@ class RAFTGMA(nn.Module):
             coords1 = coords1 + flow_init
 
         if net_prev is not None:
-            net, _ = torch.split(net, [hdim//2, hdim//2], dim=1)
-            net_prev, _ = torch.split(net_prev, [hdim//2, hdim//2], dim=1)
-            net = torch.concat([net, net_prev], dim=1)
+            with autocast(enabled=self.args.mixed_precision):
+                net, _ = torch.split(net, [hdim//2, hdim//2], dim=1)
+                net_prev, _ = torch.split(net_prev, [hdim//2, hdim//2], dim=1)
+                net = torch.concat([net, net_prev], dim=1)
+                net = self.relu(self.norm1(self.conv1(net)))
 
         flow_predictions = []
         for itr in range(iters):
