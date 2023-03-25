@@ -157,19 +157,19 @@ def train(model, train_loader, optimizer, scheduler, logger, scaler, args):
     sequence_prev = None
     for i_batch, data_blob in enumerate(train_loader):
         tic = time.time()
-        image1, image2, flow, valid, (sequence, frame) = [x.cuda() for x in data_blob]
+        image1, image2, flow, valid, (sequence, frame) = [x for x in data_blob]
 
         optimizer.zero_grad()
 
         if sequence != sequence_prev:
                 net_prev = None
         
-        flow_pred, net = model(image1, image2, net_prev=net_prev)
+        flow_pred, net = model(image1.cuda(), image2.cuda(), net_prev=net_prev)
 
         sequence_prev = sequence
         net_prev = net
 
-        loss, metrics = sequence_loss(flow_pred, flow, valid, args.gamma)
+        loss, metrics = sequence_loss(flow_pred, flow.cuda(), valid.cuda(), args.gamma)
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
 

@@ -200,9 +200,12 @@ class FlyingThings3D(FlowDataset):
                             if direction == 'into_future':
                                 self.image_list += [ [images[i], images[i+1]] ]
                                 self.flow_list += [ flows[i] ]
+                                self.extra_info += [ (fdir, i) ]
+
                             elif direction == 'into_past':
                                 self.image_list += [ [images[i+1], images[i]] ]
                                 self.flow_list += [ flows[i+1] ]
+                                self.extra_info += [ (fdir, i) ]
 
         elif split == 'validation':
             for cam in ['left']:
