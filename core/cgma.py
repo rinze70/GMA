@@ -61,7 +61,7 @@ class CAggregate(nn.Module):
 
         self.proj = nn.Linear(dim, dim)
 
-        self.gamma = nn.Parameter(torch.zeros(1))
+        # self.gamma = nn.Parameter(torch.zeros(1))
 
         if self.ffn:
             self.norm2 = norm_layer(dim)
@@ -85,7 +85,7 @@ class CAggregate(nn.Module):
         cur = cur.transpose(1, 2).reshape(B, N, C)
         cur = self.proj(cur)
 
-        x = x + self.drop_path(cur) * self.gamma
+        x = x + self.drop_path(cur) 
 
         x = self.cpe[1](x, size)
 
