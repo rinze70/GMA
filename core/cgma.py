@@ -85,12 +85,12 @@ class CAggregate(nn.Module):
         cur = cur.transpose(1, 2).reshape(B, N, C)
         cur = self.proj(cur)
 
-        x = x + self.drop_path(cur) * self.gamma
+        x = x + self.drop_path(cur)
 
         x = self.cpe[1](x, size)
 
         if self.ffn:
-            x = x + self.drop_path(self.mlp(self.norm2(x)))
+            x = x + self.drop_path(self.mlp(self.norm2(x))) * self.gamma
         x = rearrange(x, 'n (h w) c -> n c h w', h=size[0], w=size[1])
         return x
 
