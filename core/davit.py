@@ -118,9 +118,9 @@ class ChannelBlock(nn.Module):
     def forward(self, x, source, size):
         x = self.cpe[0](x, size)
         source = self.cpe[0](source, size)
-        x = self.norm1(x)
-        source = self.norm1(source)
-        cur = self.attn(x, source)
+        # x = self.norm1(x)
+        # source = self.norm1(source)
+        cur = self.attn(self.norm1(x), self.norm1(source))
         x = source + self.drop_path(cur)
 
         x = self.cpe[1](x, size)
