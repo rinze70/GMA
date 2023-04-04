@@ -7,6 +7,7 @@ This source code is licensed under the license found in the
 LICENSE file in the root directory of this source tree.
 """
 from typing import List, Optional, Tuple
+from math import ceil
 
 import torch.nn as nn
 import torch
@@ -54,6 +55,20 @@ def _seq2grid(x:Tensor, region_h:int, region_w:int, region_size:Tuple[int]):
         region_h*region_size[0], region_w*region_size[1])
     return x
 
+def _corr2grid(x:Tensor, region_h:int, region_w:int, region_size:Tuple[int]):
+    """
+    Args: 
+        x: (bs, nhead, nregion, reg_size^2, head_dim)
+    Return:
+        x: (bs, C, H, W)
+    """
+    bs, nhead, nregion, reg_size_square, _, _ = x.size()
+    x = x.view(bs, nhead, region_h, region_w, region_size[0], region_size[1], 
+                          region_h, region_w, region_size[0], region_size[1])
+    x = torch.einsum('bmhwpqyxcd->bmhpwqycxd', x).reshape(bs, nhead,
+        region_h*region_size[0], region_w*region_size[1], 
+        region_h*region_size[0], region_w*region_size[1],)
+    return x
 
 def regional_routing_attention_torch(
     query:Tensor, key:Tensor, value:Tensor, scale:float,
@@ -89,12 +104,12 @@ def regional_routing_attention_torch(
         kv_pad_r = (kv_region_size[1] - Wk % kv_region_size[1]) % kv_region_size[1]
         if (kv_pad_r > 0 or kv_pad_b > 0):
             key = F.pad(key, (0, kv_pad_r, 0, kv_pad_b)) # zero padding
-            value = F.pad(value, (0, kv_pad_r, 0, kv_pad_b)) # zero padding
+            # value = F.pad(value, (0, kv_pad_r, 0, kv_pad_b)) # zero padding
     
     # to sequence format, i.e. (bs, nhead, nregion, reg_size, head_dim)
     query, q_region_h, q_region_w = _grid2seq(query, region_size=region_size, num_heads=nhead)
     key, _, _ = _grid2seq(key, region_size=kv_region_size, num_heads=nhead)
-    value, _, _ = _grid2seq(value, region_size=kv_region_size, num_heads=nhead)
+    # value, _, _ = _grid2seq(value, region_size=kv_region_size, num_heads=nhead)
 
     # gather key and values.
     # TODO: is seperate gathering slower than fused one (our old version) ?
@@ -105,26 +120,32 @@ def regional_routing_attention_torch(
     key_g = torch.gather(key.view(bs, nhead, 1, kv_nregion, kv_region_size, head_dim).\
         expand(-1, -1, query.size(2), -1, -1, -1), dim=3,
         index=broadcasted_region_graph) # (bs, nhead, q_nregion, topk, kv_region_size, head_dim)
-    value_g = torch.gather(value.view(bs, nhead, 1, kv_nregion, kv_region_size, head_dim).\
-        expand(-1, -1, query.size(2), -1, -1, -1), dim=3,
-        index=broadcasted_region_graph) # (bs, nhead, q_nregion, topk, kv_region_size, head_dim)
+    # value_g = torch.gather(value.view(bs, nhead, 1, kv_nregion, kv_region_size, head_dim).\
+    #     expand(-1, -1, query.size(2), -1, -1, -1), dim=3,
+    #     index=broadcasted_region_graph) # (bs, nhead, q_nregion, topk, kv_region_size, head_dim)
     
     # token-to-token attention
     # (bs, nhead, q_nregion, reg_size, head_dim) @ (bs, nhead, q_nregion, head_dim, topk*kv_region_size)
     # -> (bs, nhead, q_nregion, reg_size, topk*kv_region_size)
     # TODO: mask padding region
     attn = (query * scale) @ key_g.flatten(-3, -2).transpose(-1, -2)
-    attn = torch.softmax(attn, dim=-1)
-    # (bs, nhead, q_nregion, reg_size, topk*kv_region_size) @ (bs, nhead, q_nregion, topk*kv_region_size, head_dim)
-    # -> (bs, nhead, q_nregion, reg_size, head_dim)
-    output = attn @ value_g.flatten(-3, -2)
+    
+    # attn_grid = _attn2grid(attn, region_h=q_region_h, region_w=q_region_w, region_size=region_size) # (bs, nhead, H, W, topk*kv_region_size)
+    # if auto_pad and (q_pad_b > 0 or q_pad_r > 0):
+    #     attn_grid = attn_grid[:, :, :-q_pad_b, :-q_pad_r]
 
-    # to BCHW format
-    output = _seq2grid(output, region_h=q_region_h, region_w=q_region_w, region_size=region_size)
+    # attn = torch.softmax(attn, dim=-1)
+    # # (bs, nhead, q_nregion, reg_size, topk*kv_region_size) @ (bs, nhead, q_nregion, topk*kv_region_size, head_dim)
+    # # -> (bs, nhead, q_nregion, reg_size, head_dim)
+    # output = attn @ value_g.flatten(-3, -2)
 
-    # remove paddings if needed
-    if auto_pad and (q_pad_b > 0 or q_pad_r > 0):
-        output = output[:, :, :-q_pad_b, :-q_pad_r]
+    # # to BCHW format
+    # output = _seq2grid(output, region_h=q_region_h, region_w=q_region_w, region_size=region_size)
+
+    # # remove paddings if needed
+    # if auto_pad and (q_pad_b > 0 or q_pad_r > 0):
+    #     output = output[:, :, :-q_pad_b, :-q_pad_r]
+    output = [auto_pad, q_pad_b, q_pad_r, q_region_h, q_region_w]
 
     return output, attn
 
@@ -158,7 +179,8 @@ class nchwBRA(nn.Module):
 
         ##########################################
 
-        self.qkv_linear = nn.Conv2d(self.dim, 3*self.dim, kernel_size=1)
+        self.q_linear = nn.Conv2d(self.dim, self.dim, kernel_size=1)
+        self.k_linear = nn.Conv2d(self.dim, self.dim, kernel_size=1)
         self.output_linear = nn.Conv2d(self.dim, self.dim, kernel_size=1)
 
         if attn_backend == 'torch':
@@ -166,7 +188,7 @@ class nchwBRA(nn.Module):
         else:
             raise ValueError('CUDA implementation is not available yet. Please stay tuned.')
 
-    def forward(self, x:Tensor, ret_attn_mask=False):
+    def forward(self, x:Tensor, y:Tensor, ret_attn_mask=False):
         """
         Args:
             x: NCHW tensor, better to be channel_last (https://pytorch.org/tutorials/intermediate/memory_format_tutorial.html)
@@ -177,31 +199,52 @@ class nchwBRA(nn.Module):
         region_size = (H//self.n_win, W//self.n_win)
 
         # STEP 1: linear projection
-        qkv = self.qkv_linear.forward(x) # ncHW
-        q, k, v = qkv.chunk(3, dim=1) # ncHW
+        q = self.q_linear.forward(x) # ncHW
+        k = self.k_linear.forward(y) # ncHW
+        # q, k, v = qkv.chunk(3, dim=1) # ncHW
+        v = 0
        
         # STEP 2: region-to-region routing
         # NOTE: ceil_mode=True, count_include_pad=False = auto padding
         # NOTE: gradients backward through token-to-token attention. See Appendix A for the intuition.
         q_r = F.avg_pool2d(q.detach(), kernel_size=region_size, ceil_mode=True, count_include_pad=False)
+        n, c, h, w = q_r.size()
         k_r = F.avg_pool2d(k.detach(), kernel_size=region_size, ceil_mode=True, count_include_pad=False) # nchw
         q_r:Tensor = q_r.permute(0, 2, 3, 1).flatten(1, 2) # n(hw)c
         k_r:Tensor = k_r.flatten(2, 3) # nc(hw)
         a_r = q_r @ k_r # n(hw)(hw), adj matrix of regional graph
         _, idx_r = torch.topk(a_r, k=self.topk, dim=-1) # n(hw)k long tensor
-        idx_r:LongTensor = idx_r.unsqueeze_(1).expand(-1, self.num_heads, -1, -1) 
-
+        idx_r:LongTensor = idx_r.unsqueeze_(1).expand(-1, self.num_heads, -1, -1)  # bs, nhead, q_nregion, topk
+        
+        a_r = self.scale * a_r
+        a_r = F.interpolate(a_r.view(N, h*w, h, w), scale_factor=region_size).permute(0, 2, 3, 1)
+        a_r = F.interpolate(a_r.view(N, -1, h, w), scale_factor=region_size)
+        _, _, h, w = a_r.size()
+        a_r = a_r.view(N, self.num_heads, idx_r.size(2), -1, idx_r.size(2), h*w//idx_r.size(2)) # (bs, nhead, q_nregion, reg_size, h*w)
+        
         # STEP 3: token to token attention (non-parametric function)
         output, attn_mat = self.attn_fn(query=q, key=k, value=v, scale=self.scale,
                                         region_graph=idx_r, region_size=region_size
                                        )
-        output = output + self.lepe(v) # ncHW
-        output = self.output_linear(output) # ncHW
+        auto_pad, q_pad_b, q_pad_r, region_h, region_w  = output
+        attn_mat = attn_mat.view(N, self.num_heads, idx_r.size(2), -1, self.topk, h*w//idx_r.size(2)) 
+        # attn_mat -> (bs, nhead, q_nregion, reg_size, topk, kv_region_size)
+        idx_r = idx_r.unsqueeze_(4).unsqueeze_(5).expand(-1, -1, -1, -1, self.topk, h*w//idx_r.size(2))
+        corr = torch.scatter(a_r, 4, idx_r, attn_mat)
+        corr = _corr2grid(corr, region_h=region_h, region_w=region_w, region_size=region_size)
+        
+        if auto_pad:
+            corr = corr[:, :, :-q_pad_b, :-q_pad_r, :-q_pad_b, :-q_pad_r]
+            print(corr.shape)
+
+        
+        # output = output + self.lepe(v) # ncHW
+        # output = self.output_linear(output) # ncHW
 
         if ret_attn_mask:
             return output, attn_mat
 
-        return output
+        return corr.permute(0, 2, 3, 1, 4, 5)
     
 if __name__ == "__main__":
     embed_dim=[96, 192, 384, 768]
@@ -212,5 +255,7 @@ if __name__ == "__main__":
     side_dwconv=5
     bra = nchwBRA(dim=embed_dim[0], num_heads=1, n_win=7, topk=16,  side_dwconv=side_dwconv)
     h ,w = 368//8, 496//8
-    x = torch.randn(1, embed_dim[0], h, w)
-    y, attn = bra(x, ret_attn_mask=True)
+    famp1 = torch.randn(1, embed_dim[0], h, w)
+    famp2 = torch.randn(1, embed_dim[0], h, w)
+    corr = bra(famp1, famp2)
+    print(corr.shape)
