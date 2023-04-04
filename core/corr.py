@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import math
 from utils.utils import bilinear_sampler, coords_grid
 # from compute_sparse_correlation import compute_sparse_corr, compute_sparse_corr_torch, compute_sparse_corr_mink
+from bra_hchw import nchwBRA
 
 try:
     import alt_cuda_corr
@@ -18,8 +19,12 @@ class CorrBlock:
         self.radius = radius
         self.corr_pyramid = []
 
+        batch, dim, ht, wd = fmap1.shape
+        self.bra = nchwBRA(dim=dim, num_heads=1, n_win=7, topk=16,  side_dwconv=5)
+
         # all pairs correlation
-        corr = CorrBlock.corr(fmap1, fmap2)
+        # corr = CorrBlock.corr(fmap1, fmap2)
+        corr = self.bra(fmap1, fmap2)
 
         batch, h1, w1, dim, h2, w2 = corr.shape
         corr = corr.reshape(batch * h1 * w1, dim, h2, w2)
