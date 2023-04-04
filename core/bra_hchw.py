@@ -214,7 +214,7 @@ class nchwBRA(nn.Module):
         k_r:Tensor = k_r.flatten(2, 3) # nc(hw)
         a_r = q_r @ k_r # n(hw)(hw), adj matrix of regional graph
         _, idx_r = torch.topk(a_r, k=self.topk, dim=-1) # n(hw)k long tensor
-        idx_r:LongTensor = idx_r.unsqueeze_(1).expand(-1, self.num_heads, -1, -1)  # bs, nhead, q_nregion, topk
+        idx_r:LongTensor = idx_r.unsqueeze(1).expand(-1, self.num_heads, -1, -1)  # bs, nhead, q_nregion, topk
         
         a_r = self.scale * a_r
         a_r = F.interpolate(a_r.view(N, h*w, h, w), scale_factor=region_size).permute(0, 2, 3, 1)
@@ -229,13 +229,12 @@ class nchwBRA(nn.Module):
         auto_pad, q_pad_b, q_pad_r, region_h, region_w  = output
         attn_mat = attn_mat.view(N, self.num_heads, idx_r.size(2), -1, self.topk, h*w//idx_r.size(2)) 
         # attn_mat -> (bs, nhead, q_nregion, reg_size, topk, kv_region_size)
-        idx_r = idx_r.unsqueeze_(4).unsqueeze_(5).expand(-1, -1, -1, -1, self.topk, h*w//idx_r.size(2))
+        idx_r = idx_r.unsqueeze(3).unsqueeze(5).expand(-1, -1, -1, h*w//idx_r.size(2), -1, h*w//idx_r.size(2))
         corr = torch.scatter(a_r, 4, idx_r, attn_mat)
         corr = _corr2grid(corr, region_h=region_h, region_w=region_w, region_size=region_size)
         
         if auto_pad:
             corr = corr[:, :, :-q_pad_b, :-q_pad_r, :-q_pad_b, :-q_pad_r]
-            print(corr.shape)
 
         
         # output = output + self.lepe(v) # ncHW

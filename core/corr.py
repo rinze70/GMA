@@ -19,8 +19,9 @@ class CorrBlock:
         self.radius = radius
         self.corr_pyramid = []
 
+        torch.autograd.set_detect_anomaly(True)
         batch, dim, ht, wd = fmap1.shape
-        self.bra = nchwBRA(dim=dim, num_heads=1, n_win=7, topk=16,  side_dwconv=5)
+        self.bra = nchwBRA(dim=dim, num_heads=1, n_win=7, topk=16,  side_dwconv=5).to(fmap1.device)
 
         # all pairs correlation
         # corr = CorrBlock.corr(fmap1, fmap2)
