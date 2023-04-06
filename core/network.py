@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from update import GMAUpdateBlock
 from extractor import BasicEncoder
-from corr import CorrBlock
+from corr import CorrBlock, MutiHeadCorrBlock
 from utils.utils import bilinear_sampler, coords_grid, upflow8
 from gma import Attention, Aggregate
 
@@ -87,7 +87,7 @@ class RAFTGMA(nn.Module):
 
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
-        corr_fn = CorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
+        corr_fn = MutiHeadCorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
 
         # run the context network
         with autocast(enabled=self.args.mixed_precision):
