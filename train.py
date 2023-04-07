@@ -125,9 +125,9 @@ class Logger:
 
 def main(args):
 
-    init_process_group(backend="gloo")
+    init_process_group(backend="nccl")
     gpu_id = int(os.environ['LOCAL_RANK'])
-    model = DDP(RAFTGMA(args).to(gpu_id), device_ids=[gpu_id], find_unused_parameters=True)
+    model = DDP(torch.compile(RAFTGMA(args).to(gpu_id)), device_ids=[gpu_id], find_unused_parameters=True)
 
     print(f"Parameter Count: {count_parameters(model)}")
 
