@@ -154,7 +154,7 @@ def main(args):
             break
 
     PATH = args.output+f'/{args.name}.pth'
-    if model.device == 0:
+    if model.device.index == 0:
         torch.save(model.module.state_dict(), PATH)
     destroy_process_group()
     return PATH
@@ -183,7 +183,7 @@ def train(model, train_loader, optimizer, scheduler, logger, scaler, args):
         logger.push(metrics)
 
         # Validate
-        if model.device == 0 and logger.total_steps % args.val_freq == args.val_freq - 1:
+        if model.device.index == 0 and logger.total_steps % args.val_freq == args.val_freq - 1:
             validate(model, args, logger)
             plot_train(logger, args)
             plot_val(logger, args)
