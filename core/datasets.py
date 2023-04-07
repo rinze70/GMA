@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.utils.data as data
 import torch.nn.functional as F
-# from torch.utils.data.distributed import DistributedSampler
+from torch.utils.data.distributed import DistributedSampler
 
 import os
 import math
@@ -298,11 +298,11 @@ def fetch_dataloader(args, TRAIN_DS='C+T+K+S+H'):
         aug_params = {'crop_size': args.image_size, 'min_scale': -0.2, 'max_scale': 0.4, 'do_flip': False}
         train_dataset = KITTI(aug_params, split='training')
 
-    train_loader = data.DataLoader(train_dataset, batch_size=args.batch_size, 
-        pin_memory=True, shuffle=True, num_workers=4, drop_last=True)
+    # train_loader = data.DataLoader(train_dataset, batch_size=args.batch_size, 
+    #     pin_memory=True, shuffle=True, num_workers=4, drop_last=True)
 
-    # train_loader = data.DataLoader(train_dataset, batch_size=args.batch_size//2, 
-    #     pin_memory=True, shuffle=False, sampler=DistributedSampler(train_dataset), num_workers=4, drop_last=True)
+    train_loader = data.DataLoader(train_dataset, batch_size=args.batch_size//2, 
+        pin_memory=True, shuffle=False, sampler=DistributedSampler(train_dataset), num_workers=4, drop_last=True)
 
     print('Training with %d image pairs' % len(train_dataset))
     return train_loader
