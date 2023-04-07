@@ -113,12 +113,12 @@ class MutiHeadCorrBlock:
 
         batch, h1, w1, dim, h2, w2 = corr.shape
         corr = corr.reshape(batch * h1 * w1, dim, h2, w2)
+        corr = list(corr.chunk(num_levels, dim=1))
 
-        self.corr_pyramid.append(corr[:,0].view(batch * h1 * w1, 1, h2, w2))
+        self.corr_pyramid.append(corr.pop(0))
         for i in range(1, self.num_levels):
-            cor = corr[:,i].view(batch * h1 * w1, 1, h2, w2)
-            cor = F.avg_pool2d(cor, 2**i, stride=2**i)
-            self.corr_pyramid.append(cor)
+            # cor = corr[:,i].view(batch * h1 * w1, 1, h2, w2)
+            self.corr_pyramid.append(F.avg_pool2d(corr.pop(0), 2**i, stride=2**i))
 
     def __call__(self, coords):
         r = self.radius
@@ -146,6 +146,7 @@ class MutiHeadCorrBlock:
     @staticmethod
     def corr(fmap1, fmap2, hd=4):
         batch, dim, ht, wd = fmap1.shape
+        assert dim % hd == 0
         fmap1 = fmap1.view(batch, hd, dim//hd, ht * wd)
         fmap2 = fmap2.view(batch, hd, dim//hd, ht * wd)
 
@@ -156,6 +157,9 @@ class MutiHeadCorrBlock:
 if __name__ == "__main__":
     fmap1 = torch.randn(1, 256, 368//8, 496//8)
     fmap2 = torch.randn(1, 256, 368//8, 496//8)
-    MHCB = MutiHeadCorrBlock(fmap1, fmap2, num_levels=4, radius=4)
+    # MHCB = MutiHeadCorrBlock(fmap1, fmap2, num_levels=4, radius=4)
+    fmap3 = torch.randn(1, 256, 4, 368//8, 496//8)
+    outs = fmap3.chunk(4, dim=2)
+    print(outs.shape)
     # CB = CorrBlock(fmap1, fmap2, num_levels=4, radius=4)
     # print(corr.shape)
