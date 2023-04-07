@@ -15,6 +15,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributed import init_process_group, destroy_process_group
+
 from network import RAFTGMA
 
 from utils import flow_viz
@@ -122,14 +125,16 @@ class Logger:
 
 def main(args):
 
-    model = nn.DataParallel(RAFTGMA(args), device_ids=args.gpus)
+    init_process_group(backend="gloo")
+    gpu_id = int(os.environ['LOCAL_RANK'])
+    model = DDP(RAFTGMA(args).to(gpu_id), device_ids=[gpu_id], find_unused_parameters=True)
 
     print(f"Parameter Count: {count_parameters(model)}")
 
     if args.restore_ckpt is not None:
         model.load_state_dict(torch.load(args.restore_ckpt), strict=False)
 
-    model.cuda()
+    # model.cuda()
     model.train()
 
     # if args.stage != 'chairs':
@@ -149,14 +154,16 @@ def main(args):
             break
 
     PATH = args.output+f'/{args.name}.pth'
-    torch.save(model.state_dict(), PATH)
+    if model.device == 0:
+        torch.save(model.module.state_dict(), PATH)
+    destroy_process_group()
     return PATH
 
 
 def train(model, train_loader, optimizer, scheduler, logger, scaler, args):
     for i_batch, data_blob in enumerate(train_loader):
         tic = time.time()
-        image1, image2, flow, valid = [x.cuda() for x in data_blob]
+        image1, image2, flow, valid = [x.to(model.device) for x in data_blob]
 
         optimizer.zero_grad()
 
@@ -176,12 +183,12 @@ def train(model, train_loader, optimizer, scheduler, logger, scaler, args):
         logger.push(metrics)
 
         # Validate
-        if logger.total_steps % args.val_freq == args.val_freq - 1:
+        if model.device == 0 and logger.total_steps % args.val_freq == args.val_freq - 1:
             validate(model, args, logger)
             plot_train(logger, args)
             plot_val(logger, args)
             PATH = args.output + f'/{logger.total_steps+1}_{args.name}.pth'
-            torch.save(model.state_dict(), PATH)
+            torch.save(model.module.state_dict(), PATH)
 
         if logger.total_steps >= args.num_steps:
             break
