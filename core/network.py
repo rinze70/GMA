@@ -6,7 +6,9 @@ from update import GMAUpdateBlock
 from extractor import BasicEncoder
 from corr import CorrBlock
 from utils.utils import bilinear_sampler, coords_grid, upflow8
+from einops import rearrange
 from gma import Attention, Aggregate
+from wspa import AttentionBlock
 
 try:
     autocast = torch.cuda.amp.autocast
@@ -41,6 +43,7 @@ class RAFTGMA(nn.Module):
         self.cnet = BasicEncoder(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = GMAUpdateBlock(self.args, hidden_dim=hdim)
         self.att = Attention(args=self.args, dim=cdim, heads=self.args.num_heads, max_pos_size=160, dim_head=cdim)
+        self.ab = AttentionBlock(dim=256, num_heads=8, windows_size=7)
 
     def freeze_bn(self):
         for m in self.modules():
@@ -87,6 +90,18 @@ class RAFTGMA(nn.Module):
 
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
+
+        b, c, h, w = fmap1.shape
+        fmap1 = rearrange(fmap1, 'n c h w -> n (h w) c')
+        fmap2 = rearrange(fmap2, 'n c h w -> n (h w) c')
+
+        # fmap1_0, _ = cb(fmap2, fmap1, (h, w))
+        # fmap2_0, _ = cb(fmap1, fmap2, (h, w))
+        fmap1, fmap2 = self.ab([fmap1, fmap2], (h, w))
+
+        fmap1 = rearrange(fmap1, 'n (h w) c -> n c h w', h=h, w=w)
+        fmap2 = rearrange(fmap2, 'n (h w) c -> n c h w', h=h, w=w)
+
         corr_fn = CorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
 
         # run the context network
