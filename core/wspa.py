@@ -400,7 +400,7 @@ class AttentionBlock(nn.Module):
 
         self.sb = SpatialBlock(dim=dim, num_heads=num_heads, window_size=windows_size)
         self.cb = ChannelBlock(dim=dim, num_heads=num_heads)   
-        self.csb = CrossAttentionBlock(dim=dim, num_heads=num_heads, type="spatial")
+        # self.csb = CrossAttentionBlock(dim=dim, num_heads=num_heads, type="spatial")
         self.ccb = CrossAttentionBlock(dim=dim, num_heads=num_heads, type="channel")
 
     def forward(self, x, size): # b, c, h, w
@@ -414,35 +414,44 @@ class AttentionBlock(nn.Module):
 
         if is_list:
             x, source = torch.split(x, [batch_dim, batch_dim], dim=0)
-        
-        x_     , _ = self.csb(source, x, size)
-        source_, _ = self.ccb(x, source, size)
 
-        return x_, source_
+        # x_    , _ = self.csb(source, x, size)
+        # source, _ = self.csb(x, source, size)
+        x_    , _ = self.ccb(source, x, size)
+        source, _ = self.ccb(x, source, size)
+        b, n, c = source.shape
+        h, w = size
+
+        return x_, source
 
 
 
 if __name__ == "__main__":
     from einops import rearrange
+    import GPUtil
 
     h, w = 368//8, 496//8
-    fmap1 = torch.randn(1, 256, h, w)
-    fmap2 = torch.randn(1, 256, h, w)
+    fmap1 = torch.randn(8, 256, h, w).cuda()
+    fmap2 = torch.randn(8, 256, h, w).cuda()
 
     # dpr = [x.item() for x in torch.linspace(0, 0.2, 6)]
     # sb = SpatialBlock(dim=256, num_heads=8, window_size=7) # point-wise self-attention
     # cb = ChannelBlock(dim=256, num_heads=8)                # channel-wise self-attention
-    ab = AttentionBlock(dim=256, num_heads=8, windows_size=7)
+    ab = AttentionBlock(dim=256, num_heads=8, windows_size=7).cuda()
 
     b, c, h, w = fmap1.shape
+    GPUtil.showUtilization()
     fmap1 = rearrange(fmap1, 'n c h w -> n (h w) c')
     fmap2 = rearrange(fmap2, 'n c h w -> n (h w) c')
+    GPUtil.showUtilization()
 
-    # fmap1_0, _ = cb(fmap2, fmap1, (h, w))
-    # fmap2_0, _ = cb(fmap1, fmap2, (h, w))
-    fmap1, fmap2 = ab([fmap1, fmap2], (h, w))
+    fmap1, fmap2 = ab([fmap2, fmap2], (h, w))
+    GPUtil.showUtilization()
 
     fmap1 = rearrange(fmap1, 'n (h w) c -> n c h w', h=h, w=w)
     fmap2 = rearrange(fmap2, 'n (h w) c -> n c h w', h=h, w=w)
+    # # torch.cuda.empty_cache()
+    GPUtil.showUtilization()
 
-    print(fmap1.shape)
+    print(fmap1.shape, fmap2.shape)
+
